@@ -5,8 +5,8 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+import tempfile
 import unittest
-import uuid
 from pathlib import Path
 
 
@@ -54,22 +54,28 @@ class ScopedArticleSelectionTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_scoped_normalize_repairs_only_the_requested_temporary_copy(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            temporary_articles = temporary_root / "articles"
+            temporary_articles.mkdir()
+            temporary_article = temporary_articles / "generated.html"
+            temporary_article.write_text("<html><body><footer>noncanonical</footer></body></html>", encoding="utf-8")
 
-    def test_scoped_normalize_repairs_only_the_requested_article(self):
-        temporary_article = ROOT / "articles" / f".chrome-normalizer-{uuid.uuid4().hex}.html"
-        relative_path = temporary_article.relative_to(ROOT).as_posix()
-        temporary_article.write_text("<html><body><footer>noncanonical</footer></body></html>", encoding="utf-8")
-        try:
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT), "--only", relative_path],
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
+            original_root = self.normalizer.ROOT
+            original_articles = self.normalizer.ARTICLES
+            try:
+                self.normalizer.ROOT = temporary_root
+                self.normalizer.ARTICLES = temporary_articles
+                selected = self.normalizer.select_articles(["articles/generated.html"])
+                self.assertEqual(selected, [temporary_article])
+                changed, _ = self.normalizer.normalize_article(selected[0], self.normalizer.canonical_footer())
+            finally:
+                self.normalizer.ROOT = original_root
+                self.normalizer.ARTICLES = original_articles
+
+            self.assertTrue(changed)
             self.assertIn("footer-social", temporary_article.read_text(encoding="utf-8"))
-        finally:
-            temporary_article.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
