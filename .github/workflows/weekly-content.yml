@@ -172,8 +172,8 @@ jobs:
             [ -n "$ARTICLE" ] && QUALITY_ARGS+=(--article "$ARTICLE")
           done < <(
             {
-              git diff --name-only HEAD -- articles/*.html
-              git ls-files --others --exclude-standard -- articles/*.html
+              git diff --name-only HEAD -- 'articles/*.html'
+              git ls-files --others --exclude-standard -- 'articles/*.html'
             } | sort -u
           )
 
@@ -189,8 +189,8 @@ jobs:
           {
             mapfile -t CHANGED_ARTICLES < <(
               {
-                git diff --name-only HEAD -- articles/*.html
-                git ls-files --others --exclude-standard -- articles/*.html
+                git diff --name-only HEAD -- 'articles/*.html'
+                git ls-files --others --exclude-standard -- 'articles/*.html'
               } | sort -u
             )
             if [ "${#CHANGED_ARTICLES[@]}" -eq 0 ]; then
