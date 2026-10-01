@@ -54,7 +54,13 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add reports/
+          REPORT_MONTH="${{ github.event.inputs.month }}"
+          if [ -z "$REPORT_MONTH" ]; then
+            REPORT_MONTH=$(date -u -d "last month" +%Y-%m)
+          fi
+          REPORT_PATH="reports/${REPORT_MONTH}-report.md"
+          test -f "$REPORT_PATH"
+          git add -f "$REPORT_PATH"
           if git diff --staged --quiet; then
             echo "No new report to commit"
           else
