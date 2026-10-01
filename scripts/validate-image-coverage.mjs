@@ -95,6 +95,45 @@ function parse(html) {
   return nodes;
 }
 
+function matchesSimpleCssSelector(node, selector) {
+  const value = selector.trim().replace(/::?[\w-]+(?:\([^)]*\))?/g, "");
+  if (!value || /[\s>+~\[\]*]/.test(value)) return false;
+  const tag = value.match(/^[a-z][\w-]*/i)?.[0]?.toLowerCase();
+  if (tag && tag !== node.tag) return false;
+  const id = value.match(/#([\w-]+)/)?.[1];
+  if (id && id !== node.attrs.id) return false;
+  const classes = [...value.matchAll(/\.([\w-]+)/g)].map((match) => match[1]);
+  const nodeClasses = new Set((node.attrs.class || "").split(/\s+/).filter(Boolean));
+  return classes.every((className) => nodeClasses.has(className));
+}
+
+function applyStylesheetBackgrounds(nodes, stylesheets) {
+  for (const stylesheet of stylesheets) {
+    const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selectors = rule[1].split(",");
+      const declarations = rule[2];
+      if (!/background(?:-image)?\s*:[^;}]*url\(/i.test(declarations)) continue;
+      for (const node of nodes) {
+        if (selectors.some((selector) => matchesSimpleCssSelector(node, selector))) node.hasBg = true;
+      }
+    }
+  }
+}
+
+async function localStylesheetTexts(html, htmlFile, root) {
+  const texts = [];
+  for (const match of html.matchAll(/<link\b([^>]*)>/gi)) {
+    const attrs = parseAttrs(match[1]);
+    if (!/(^|\s)stylesheet(\s|$)/i.test(attrs.rel || "") || !attrs.href) continue;
+    if (/^(?:https?:)?\/\//i.test(attrs.href)) continue;
+    const file = path.resolve(path.dirname(htmlFile), attrs.href.split(/[?#]/, 1)[0]);
+    if (!file.startsWith(root + path.sep) || !(await exists(file))) continue;
+    texts.push(await readFile(file, "utf8"));
+  }
+  return texts;
+}
+
 // ───────────────────────── rules ─────────────────────────
 const AFFILIATE = /amazon\.[a-z.]+\/|amzn\.to|amzn\.com|\/go\/|\/out\/|\/recommends?\/|shareasale|awin1|impact\.com|clickbank|cj\.com|rstyle|shopstyle|geni\.us/i;
 const CARD_TOKENS = /(^|[\s_-])(card|product|box|pick|item|tile|listing|offer|deal|feature|spotlight|verdict|buy|recommend)([\s_-]|$)/i;
@@ -119,8 +158,9 @@ function cardOf(a) {
 function freeReason(n) { for (let p = n; p; p = p.parent) if (p.imageFree) return p.imageFree; return null; }
 function label(n) { const c = (n.attrs.class || "").split(/\s+/).filter(Boolean).slice(0, 3).join("."); return `<${n.tag}${n.attrs.id ? "#" + n.attrs.id : ""}${c ? "." + c : ""}>`; }
 
-function checkPage(html, page) {
+function checkPage(html, page, stylesheets = []) {
   const nodes = parse(html);
+  applyStylesheetBackgrounds(nodes, stylesheets);
   const findings = [];
   const cards = new Set();
   let affiliateLinks = 0;
@@ -230,7 +270,7 @@ async function runDir(dir) {
   for (const file of files) {
     const html = await readFile(file, "utf8");
     const page = path.relative(root, file);
-    const r = checkPage(html, page);
+    const r = checkPage(html, page, await localStylesheetTexts(html, file, root));
     pages += 1; cards += r.cards;
     findings.push(...r.findings);
     for (let ref of r.refs) {

@@ -92,8 +92,8 @@ function loadHeroLibrary(file = HERO_IMAGES_FILE) {
     if (!Array.isArray(category?.keywords) || category.keywords.length === 0) {
       throw new Error(`[hero-images] ${name} is missing keyword matches`);
     }
-    if (!Array.isArray(category?.images) || category.images.length < 3 || category.images.length > 5) {
-      throw new Error(`[hero-images] ${name} must provide 3–5 image URLs`);
+    if (!Array.isArray(category?.images) || category.images.length < 3 || category.images.length > 6) {
+      throw new Error(`[hero-images] ${name} must provide 3–6 image URLs`);
     }
     for (const image of category.images) {
       if (typeof image !== 'string' || !/^https:\/\/images\.pexels\.com\//.test(image)) {

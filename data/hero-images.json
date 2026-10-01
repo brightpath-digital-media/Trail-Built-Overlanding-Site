@@ -1,13 +1,22 @@
 {
-  "source": "Every candidate was opened and visually reviewed in the 2026-08-20 local browser audit. The generator excludes URLs already used in site content and the cross-site editorial ledger before selection.",
-  "reviewed_at": "2026-08-20",
+  "source": "Candidates are source-controlled and visually reviewed. The generator excludes URLs already used in site content and the cross-site editorial ledger before selection.",
+  "reviewed_at": "2026-10-01",
   "categories": {
     "navigation": {
       "keywords": ["navigation", "gps", "maps", "mapping", "route", "drivesmart", "onx"],
       "images": [
         "https://images.pexels.com/photos/30954662/pexels-photo-30954662/free-photo-of-smartphone-gps-navigation-on-car-dashboard.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/7856880/pexels-photo-7856880.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/6044782/pexels-photo-6044782.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/6044782/pexels-photo-6044782.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/17217568/pexels-photo-17217568.jpeg?cs=srgb&fm=jpg&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/17217568/pexels-photo-17217568.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/gps-in-car-17217568/",
+          "photographer": "Mladen Šćekić",
+          "license": "Pexels License (Free)"
+        }
       ]
     },
     "power-electrical": {
@@ -15,7 +24,30 @@
       "images": [
         "https://images.pexels.com/photos/35647780/pexels-photo-35647780/free-photo-of-mobile-solar-panel-trailer-in-urban-setting.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/9799714/pexels-photo-9799714.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/9875439/pexels-photo-9875439.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/9875439/pexels-photo-9875439.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/38601664/pexels-photo-38601664.jpeg?cs=srgb&w=1600",
+        "https://images.pexels.com/photos/38601633/pexels-photo-38601633.jpeg?cs=srgb&w=1600",
+        "https://images.pexels.com/photos/38601634/pexels-photo-38601634.jpeg?cs=srgb&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/38601664/pexels-photo-38601664.jpeg?cs=srgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/portable-solar-panels-on-dried-earth-surface-38601664/",
+          "photographer": "Nothing Ahead",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/38601633/pexels-photo-38601633.jpeg?cs=srgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/portable-orange-solar-lamps-outdoors-38601633/",
+          "photographer": "Nothing Ahead",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/38601634/pexels-photo-38601634.jpeg?cs=srgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/two-portable-solar-lights-against-concrete-wall-38601634/",
+          "photographer": "Nothing Ahead",
+          "license": "Pexels License (Free)"
+        }
       ]
     },
     "recovery": {
@@ -23,7 +55,23 @@
       "images": [
         "https://images.pexels.com/photos/8648642/pexels-photo-8648642.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/14973885/pexels-photo-14973885/free-photo-of-jeep-in-puddle.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/30788741/pexels-photo-30788741/free-photo-of-off-road-adventure-in-muddy-forest-terrain.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/30788741/pexels-photo-30788741/free-photo-of-off-road-adventure-in-muddy-forest-terrain.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/14507483/pexels-photo-14507483.jpeg?cs=srgb&fm=jpg&w=1600",
+        "https://images.pexels.com/photos/19198920/pexels-photo-19198920.jpeg?cs=srgb&fm=jpg&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/14507483/pexels-photo-14507483.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/off-road-buggy-stuck-in-mud-14507483/",
+          "photographer": "Wallace Silva",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/19198920/pexels-photo-19198920.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/buggy-driving-in-mud-19198920/",
+          "photographer": "Pich Lokei",
+          "license": "Pexels License (Free)"
+        }
       ]
     },
     "camp-kitchen": {
@@ -63,7 +111,30 @@
       "images": [
         "https://images.pexels.com/photos/12956027/pexels-photo-12956027.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/14508845/pexels-photo-14508845.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/13016070/pexels-photo-13016070.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/13016070/pexels-photo-13016070.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/8659504/pexels-photo-8659504.jpeg?cs=srgb&fm=jpg&w=1600",
+        "https://images.pexels.com/photos/5960213/pexels-photo-5960213.jpeg?cs=srgb&fm=jpg&w=1600",
+        "https://images.pexels.com/photos/30369511/pexels-photo-30369511.jpeg?cs=srgb&fm=jpg&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/8659504/pexels-photo-8659504.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/close-up-of-a-dirty-car-wheel-8659504/",
+          "photographer": "Anastassiya Golovko",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/5960213/pexels-photo-5960213.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/close-up-photo-of-a-muddy-tire-5960213/",
+          "photographer": "Jana Ohajdova",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/30369511/pexels-photo-30369511.jpeg?cs=srgb&fm=jpg&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/close-up-of-worn-tractor-tire-tread-pattern-30369511/",
+          "photographer": "Markus Winkler",
+          "license": "Pexels License (Free)"
+        }
       ]
     },
     "storage": {
@@ -71,7 +142,23 @@
       "images": [
         "https://images.pexels.com/photos/9582574/pexels-photo-9582574.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/29807888/pexels-photo-29807888/free-photo-of-sleek-car-with-rooftop-cargo-under-pink-sky.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/6196228/pexels-photo-6196228.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/6196228/pexels-photo-6196228.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/37727136/pexels-photo-37727136.jpeg?auto=compress&cs=tinysrgb&w=1600",
+        "https://images.pexels.com/photos/8728409/pexels-photo-8728409.jpeg?auto=compress&cs=tinysrgb&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/37727136/pexels-photo-37727136.jpeg?auto=compress&cs=tinysrgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/silver-car-parked-with-roof-cargo-carrier-in-garden-37727136/",
+          "photographer": "Siarhei Nester",
+          "license": "Pexels License (Free)"
+        },
+        {
+          "image_url": "https://images.pexels.com/photos/8728409/pexels-photo-8728409.jpeg?auto=compress&cs=tinysrgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/driver-and-opened-car-boot-8728409/",
+          "photographer": "Katya Wolf",
+          "license": "Pexels License (Free)"
+        }
       ]
     },
     "lighting": {
@@ -87,7 +174,16 @@
       "images": [
         "https://images.pexels.com/photos/31205721/pexels-photo-31205721/free-photo-of-land-rover-defender-on-a-scenic-road-trip.jpeg?auto=compress&cs=tinysrgb&w=1200",
         "https://images.pexels.com/photos/38492464/pexels-photo-38492464/free-photo-of-offroad-vehicle-navigating-rocky-terrain.jpeg?auto=compress&cs=tinysrgb&w=1200",
-        "https://images.pexels.com/photos/28794392/pexels-photo-28794392/free-photo-of-off-road-adventure-in-pasig-mud-trail.jpeg?auto=compress&cs=tinysrgb&w=1200"
+        "https://images.pexels.com/photos/28794392/pexels-photo-28794392/free-photo-of-off-road-adventure-in-pasig-mud-trail.jpeg?auto=compress&cs=tinysrgb&w=1200",
+        "https://images.pexels.com/photos/31653068/pexels-photo-31653068.jpeg?cs=srgb&w=1600"
+      ],
+      "reviewed_additions": [
+        {
+          "image_url": "https://images.pexels.com/photos/31653068/pexels-photo-31653068.jpeg?cs=srgb&w=1600",
+          "source_page_url": "https://www.pexels.com/photo/off-road-adventure-in-vast-desert-landscape-31653068/",
+          "photographer": "Diji Aderogba",
+          "license": "Pexels License (Free)"
+        }
       ]
     }
   }
