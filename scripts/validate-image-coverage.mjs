@@ -28,7 +28,7 @@
  *   node image-coverage.mjs --sites sites.json --out results.json [--shard 1/4] [--concurrency 6]
  *   Any mode: --json <file> writes the full report; exit code 1 on any FAIL.
  */
-import { access, open, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 // ───────────────────────── options ─────────────────────────
@@ -107,13 +107,47 @@ function matchesSimpleCssSelector(node, selector) {
   return classes.every((className) => nodeClasses.has(className));
 }
 
-function applyStylesheetBackgrounds(nodes, stylesheets) {
+function isWithinRoot(file, root) {
+  return file === root || file.startsWith(root + path.sep);
+}
+
+function cssUrls(declarations) {
+  return [...declarations.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/gi)].map((match) => match[1].trim());
+}
+
+async function isUsableLocalStylesheetBackground(url, stylesheetFile, root) {
+  if (!url || /^(?:https?:)?\/\//i.test(url) || /^data:/i.test(url)) return false;
+  let clean;
+  try {
+    clean = decodeURIComponent(url.split(/[?#]/, 1)[0]);
+  } catch {
+    return false;
+  }
+  if (!clean) return false;
+  const target = clean.startsWith("/")
+    ? path.resolve(root, `.${clean}`)
+    : path.resolve(path.dirname(stylesheetFile), clean);
+  if (!isWithinRoot(target, root)) return false;
+  try {
+    const details = await stat(target);
+    return details.isFile() && details.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function applyStylesheetBackgrounds(nodes, stylesheets, root) {
   for (const stylesheet of stylesheets) {
-    const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, "");
+    const css = stylesheet.css.replace(/\/\*[\s\S]*?\*\//g, "");
     for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       const selectors = rule[1].split(",");
       const declarations = rule[2];
       if (!/background(?:-image)?\s*:[^;}]*url\(/i.test(declarations)) continue;
+      const backgroundUrls = cssUrls(declarations);
+      const hasUsableLocalBackground = backgroundUrls.length > 0 && (await Promise.all(
+        backgroundUrls.map((url) => isUsableLocalStylesheetBackground(url, stylesheet.file, root))
+      )).every(Boolean);
+      if (!hasUsableLocalBackground) continue;
       for (const node of nodes) {
         if (selectors.some((selector) => matchesSimpleCssSelector(node, selector))) node.hasBg = true;
       }
@@ -122,16 +156,19 @@ function applyStylesheetBackgrounds(nodes, stylesheets) {
 }
 
 async function localStylesheetTexts(html, htmlFile, root) {
-  const texts = [];
+  const stylesheets = [];
   for (const match of html.matchAll(/<link\b([^>]*)>/gi)) {
     const attrs = parseAttrs(match[1]);
     if (!/(^|\s)stylesheet(\s|$)/i.test(attrs.rel || "") || !attrs.href) continue;
     if (/^(?:https?:)?\/\//i.test(attrs.href)) continue;
-    const file = path.resolve(path.dirname(htmlFile), attrs.href.split(/[?#]/, 1)[0]);
-    if (!file.startsWith(root + path.sep) || !(await exists(file))) continue;
-    texts.push(await readFile(file, "utf8"));
+    const href = attrs.href.split(/[?#]/, 1)[0];
+    const file = href.startsWith("/")
+      ? path.resolve(root, `.${href}`)
+      : path.resolve(path.dirname(htmlFile), href);
+    if (!isWithinRoot(file, root) || !(await exists(file))) continue;
+    stylesheets.push({ file, css: await readFile(file, "utf8") });
   }
-  return texts;
+  return stylesheets;
 }
 
 // ───────────────────────── rules ─────────────────────────
@@ -158,9 +195,9 @@ function cardOf(a) {
 function freeReason(n) { for (let p = n; p; p = p.parent) if (p.imageFree) return p.imageFree; return null; }
 function label(n) { const c = (n.attrs.class || "").split(/\s+/).filter(Boolean).slice(0, 3).join("."); return `<${n.tag}${n.attrs.id ? "#" + n.attrs.id : ""}${c ? "." + c : ""}>`; }
 
-function checkPage(html, page, stylesheets = []) {
+async function checkPage(html, page, stylesheets = [], publishRoot) {
   const nodes = parse(html);
-  applyStylesheetBackgrounds(nodes, stylesheets);
+  await applyStylesheetBackgrounds(nodes, stylesheets, publishRoot);
   const findings = [];
   const cards = new Set();
   let affiliateLinks = 0;
@@ -270,7 +307,7 @@ async function runDir(dir) {
   for (const file of files) {
     const html = await readFile(file, "utf8");
     const page = path.relative(root, file);
-    const r = checkPage(html, page, await localStylesheetTexts(html, file, root));
+    const r = await checkPage(html, page, await localStylesheetTexts(html, file, root), root);
     pages += 1; cards += r.cards;
     findings.push(...r.findings);
     for (let ref of r.refs) {
@@ -344,7 +381,7 @@ async function runUrl(site) {
       }
     }
     if (!res.text) { findings.push({ level: "fail", rule: "unreachable", page: u, detail: `HTTP ${res.status}` }); return; }
-    const r = checkPage(res.text, u);
+    const r = await checkPage(res.text, u);
     pages += 1; cards += r.cards;
     findings.push(...r.findings);
     for (const ref of r.refs) { try { const abs = new URL(ref, res.url).toString(); if (!remote.has(abs)) remote.set(abs, u); } catch {} }
