@@ -102,6 +102,18 @@ jobs:
             python3 tools/test_normalize_article_chrome.py
           } 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/verify-topic-pool-and-overwrite-guard.log"
 
+      - name: Verify Creators API partner tag
+        id: verify_creators_api_partner_tag
+        if: steps.check_published.outputs.skip != 'true'
+        env:
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
+        run: |
+          if [ -z "$CREATORS_API_PARTNER_TAG" ]; then
+            echo "::error::Creators API partner tag is not configured. Set PAAPI_PARTNER_TAG or CREATORS_API_PARTNER_TAG as a repository secret."
+            exit 1
+          fi
+          echo "Creators API partner tag is configured."
+
       # ── 3b. Build runtime-verified product pool ───────────────────────────────
       - name: Build runtime-verified product pool
         id: build_verified_product_pool
@@ -109,7 +121,7 @@ jobs:
         env:
           CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
           CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
-          CREATORS_API_PARTNER_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
           AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
         run: |
           set -o pipefail
@@ -125,7 +137,7 @@ jobs:
           AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
           CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
           CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
-          CREATORS_API_PARTNER_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
           REQUIRE_POOL_VERIFICATION: 'true'
         run: |
           set -o pipefail
