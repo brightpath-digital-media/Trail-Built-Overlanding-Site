@@ -119,13 +119,42 @@ def validate_article(path: Path, expected_footer: str) -> list[str]:
     return failures
 
 
+def select_articles(only_paths: list[str] | None) -> list[Path]:
+    if not only_paths:
+        return sorted(ARTICLES.glob("*.html"))
+
+    articles_root = ARTICLES.resolve()
+    selected: list[Path] = []
+    for raw_path in only_paths:
+        candidate = Path(raw_path)
+        resolved = (ROOT / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+        try:
+            resolved.relative_to(articles_root)
+        except ValueError as exc:
+            raise ValueError(f"--only path must be inside {ARTICLES.relative_to(ROOT)}/: {raw_path}") from exc
+        if resolved.suffix.lower() != ".html" or not resolved.is_file():
+            raise ValueError(f"--only path must name an existing article HTML file: {raw_path}")
+        if resolved not in selected:
+            selected.append(resolved)
+    return sorted(selected)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Validate without changing article files")
+    parser.add_argument(
+        "--only",
+        action="append",
+        metavar="PATH",
+        help="Normalize and validate only this article path; repeat for additional articles",
+    )
     args = parser.parse_args()
     footer = canonical_footer()
     expected_footer = footer_signature(footer)
-    articles = sorted(ARTICLES.glob("*.html"))
+    try:
+        articles = select_articles(args.only)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not args.check:
         changed = 0
         price_tables = 0

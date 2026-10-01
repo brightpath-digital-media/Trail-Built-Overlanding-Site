@@ -87,7 +87,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
-          pip install requests python-dateutil 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/install-python-dependencies.log"
+          pip install -r requirements.txt requests python-dateutil 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/install-python-dependencies.log"
 
       # ── 3. Verify tests before generating (no secrets passed) ───────────────
       - name: Verify topic pool and overwrite guard
@@ -96,7 +96,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
-          node scripts/verify-topic-pool.js && node scripts/test-overwrite-guard.js 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/verify-topic-pool-and-overwrite-guard.log"
+          {
+            node scripts/verify-topic-pool.js
+            node scripts/test-overwrite-guard.js
+            python3 tools/test_normalize_article_chrome.py
+          } 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/verify-topic-pool-and-overwrite-guard.log"
 
       # ── 3b. Build runtime-verified product pool ───────────────────────────────
       - name: Build runtime-verified product pool
@@ -174,6 +178,30 @@ jobs:
           )
 
           node scripts/seo-audit.mjs "${QUALITY_ARGS[@]}" 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/run-seo-audit.log"
+
+      # ── 6b. Normalize changed article chrome, then enforce the full gate ──────
+      - name: Normalize and validate article chrome
+        id: normalize_article_chrome
+        if: steps.check_published.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-content-logs"
+          {
+            mapfile -t CHANGED_ARTICLES < <(
+              {
+                git diff --name-only HEAD -- articles/*.html
+                git ls-files --others --exclude-standard -- articles/*.html
+              } | sort -u
+            )
+            if [ "${#CHANGED_ARTICLES[@]}" -eq 0 ]; then
+              echo "No changed article files require scoped chrome normalization."
+            else
+              for ARTICLE in "${CHANGED_ARTICLES[@]}"; do
+                python3 scripts/normalize-article-chrome.py --only "$ARTICLE"
+              done
+            fi
+            python3 scripts/normalize-article-chrome.py --check
+          } 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/normalize-and-validate-article-chrome.log"
 
       # ── 7. Upload SEO audit as artifact ─────────────────────────────────────
       - name: Upload SEO audit report
@@ -357,6 +385,7 @@ jobs:
           SANITIZE_ARTICLES_OUTCOME: ${{ steps.sanitize_articles.outcome }}
           REGENERATE_SITEMAP_OUTCOME: ${{ steps.regenerate_sitemap.outcome }}
           SEO_AUDIT_OUTCOME: ${{ steps.seo_audit.outcome }}
+          NORMALIZE_ARTICLE_CHROME_OUTCOME: ${{ steps.normalize_article_chrome.outcome }}
           UPLOAD_SEO_AUDIT_OUTCOME: ${{ steps.upload_seo_audit.outcome }}
           COMMIT_ARTICLE_OUTCOME: ${{ steps.commit_article.outcome }}
           PUSH_CHANGES_OUTCOME: ${{ steps.push_changes.outcome }}
@@ -376,6 +405,7 @@ jobs:
               ['Sanitize generated articles', process.env.SANITIZE_ARTICLES_OUTCOME, 'sanitize-generated-articles.log'],
               ['Regenerate sitemap', process.env.REGENERATE_SITEMAP_OUTCOME, 'regenerate-sitemap.log'],
               ['Run SEO audit and quality gate for changed articles', process.env.SEO_AUDIT_OUTCOME, 'run-seo-audit.log'],
+              ['Normalize and validate article chrome', process.env.NORMALIZE_ARTICLE_CHROME_OUTCOME, 'normalize-and-validate-article-chrome.log'],
               ['Upload SEO audit report', process.env.UPLOAD_SEO_AUDIT_OUTCOME],
               ['Commit new article and updated files', process.env.COMMIT_ARTICLE_OUTCOME, 'commit-new-article-and-updated-files.log'],
               ['Push changes to main', process.env.PUSH_CHANGES_OUTCOME, 'push-changes-to-main.log'],
