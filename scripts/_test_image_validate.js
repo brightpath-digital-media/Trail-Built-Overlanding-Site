@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * Quick smoke test for the validateImageUrl / resolveValidImageUrl functions.
- * Not committed to the repo — run locally only.
+ * Smoke tests for remote fallback URLs and stylesheet-background validation.
  * Usage: node scripts/_test_image_validate.js
  */
+const assert = require('assert');
+const { execFileSync } = require('child_process');
+const fs = require('fs');
 const https = require('https');
+const os = require('os');
+const path = require('path');
 
 const UNSPLASH_FALLBACKS = [
   'https://images.unsplash.com/photo-1533591380348-14193f1de18f?w=1200&q=80',
@@ -41,6 +45,53 @@ function validateImageUrl(url) {
   });
 }
 
+function runImageCoverage(dir) {
+  return execFileSync(process.execPath, [path.join(__dirname, 'validate-image-coverage.mjs'), '--dir', dir, '--remote', 'off', '--hero', 'warn', '--page-level', 'block'], {
+    encoding: 'utf8',
+  });
+}
+
+function writeFixture(root, background) {
+  fs.writeFileSync(path.join(root, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="css/site.css"></head><body><section class="hero">Hero</section></body></html>');
+  fs.mkdirSync(path.join(root, 'css'));
+  fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background: url('${background}') center / cover no-repeat; }`);
+}
+
+function testStylesheetBackgroundValidation() {
+  console.log('\n=== Testing stylesheet hero background validation ===');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-image-coverage-'));
+  try {
+    writeFixture(root, '../images/missing.jpg');
+    const missing = runImageCoverage(root);
+    assert.match(missing, /WARN hero\s+index\.html/, 'missing local stylesheet image must not satisfy the hero rule');
+
+    fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background-image: url('https://images.example.invalid/hero.jpg'); }`);
+    const remote = runImageCoverage(root);
+    assert.match(remote, /WARN hero\s+index\.html/, 'remote stylesheet image must not satisfy the hero rule');
+
+    fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background-image: url('data:image/png;base64,AA=='); }`);
+    const data = runImageCoverage(root);
+    assert.match(data, /WARN hero\s+index\.html/, 'data URI stylesheet image must not satisfy the hero rule');
+
+    fs.mkdirSync(path.join(root, 'images'));
+    fs.writeFileSync(path.join(root, 'images', 'hero.jpg'), 'non-empty local image fixture');
+    fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background-image: url('../images/hero.jpg'); }`);
+    const local = runImageCoverage(root);
+    assert.doesNotMatch(local, /WARN hero/, 'existing non-empty local stylesheet image must satisfy the hero rule');
+
+    fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background: url('../images/hero.jpg'), url('../images/missing.jpg'); }`);
+    const mixed = runImageCoverage(root);
+    assert.match(mixed, /WARN hero\s+index\.html/, 'a rule with any missing stylesheet image must not satisfy the hero rule');
+
+    fs.writeFileSync(path.join(root, 'css', 'site.css'), `.hero { background-image: url('../images/hero.jpg'); }`);
+    const homepage = runImageCoverage(path.join(__dirname, '..'));
+    assert.doesNotMatch(homepage, /WARN hero\s+index\.html/, 'homepage local stylesheet hero must satisfy the hero rule');
+    console.log('PASS: missing, remote, and data stylesheet backgrounds warn; local fixture and homepage backgrounds pass.');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   console.log('\n=== Testing dead URL rejection ===');
   const deadOk = await validateImageUrl(DEAD_URL);
@@ -54,14 +105,16 @@ async function main() {
   let allOk = true;
   for (const url of UNSPLASH_FALLBACKS) {
     const ok = await validateImageUrl(url);
-    const status = ok ? '✅ OK  ' : '❌ DEAD';
+    const status = ok ? 'OK' : 'DEAD';
     console.log(`  ${status}  ${url}`);
     if (!ok) allOk = false;
   }
 
+  testStylesheetBackgroundValidation();
+
   console.log('\n=== Summary ===');
   if (!deadOk && allOk) {
-    console.log('All checks passed. Dead URL rejected; all fallbacks live.');
+    console.log('All checks passed. Dead URL rejected; all fallbacks and stylesheet-background checks passed.');
     process.exit(0);
   } else {
     if (deadOk) console.error('WARNING: Dead URL is now returning 200 — update the test.');
