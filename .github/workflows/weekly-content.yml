@@ -158,6 +158,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
           node scripts/sanitize-articles.mjs 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/sanitize-generated-articles.log"
 
+      # ── 4b. Block unsupported first-hand or reviewer-persona claims ─────────
+      - name: Validate research-based editorial claims
+        id: validate_research_claims
+        if: steps.check_published.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-content-logs"
+          node scripts/validate-research-claims.mjs 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/validate-research-claims.log"
+
       # ── 5. Regenerate sitemap ────────────────────────────────────────────────
       - name: Regenerate sitemap
         id: regenerate_sitemap
@@ -395,6 +404,7 @@ jobs:
           VERIFY_TOPIC_POOL_OUTCOME: ${{ steps.verify_topic_pool.outcome }}
           GENERATE_ARTICLE_OUTCOME: ${{ steps.generate_article.outcome }}
           SANITIZE_ARTICLES_OUTCOME: ${{ steps.sanitize_articles.outcome }}
+          VALIDATE_RESEARCH_CLAIMS_OUTCOME: ${{ steps.validate_research_claims.outcome }}
           REGENERATE_SITEMAP_OUTCOME: ${{ steps.regenerate_sitemap.outcome }}
           SEO_AUDIT_OUTCOME: ${{ steps.seo_audit.outcome }}
           NORMALIZE_ARTICLE_CHROME_OUTCOME: ${{ steps.normalize_article_chrome.outcome }}
@@ -415,6 +425,7 @@ jobs:
               ['Verify topic pool and overwrite guard', process.env.VERIFY_TOPIC_POOL_OUTCOME, 'verify-topic-pool-and-overwrite-guard.log'],
               ['Generate new article', process.env.GENERATE_ARTICLE_OUTCOME, 'generate-new-article.log'],
               ['Sanitize generated articles', process.env.SANITIZE_ARTICLES_OUTCOME, 'sanitize-generated-articles.log'],
+              ['Validate research-based editorial claims', process.env.VALIDATE_RESEARCH_CLAIMS_OUTCOME, 'validate-research-claims.log'],
               ['Regenerate sitemap', process.env.REGENERATE_SITEMAP_OUTCOME, 'regenerate-sitemap.log'],
               ['Run SEO audit and quality gate for changed articles', process.env.SEO_AUDIT_OUTCOME, 'run-seo-audit.log'],
               ['Normalize and validate article chrome', process.env.NORMALIZE_ARTICLE_CHROME_OUTCOME, 'normalize-and-validate-article-chrome.log'],

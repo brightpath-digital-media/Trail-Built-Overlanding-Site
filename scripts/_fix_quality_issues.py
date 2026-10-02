@@ -62,10 +62,10 @@ def fix_file(filepath, fixes_applied):
         fix_back_to_top, content
     )
 
-    # Fix 3: emoji-avatar — emoji/entity in avatar div
+    # Fix 3: avatar — reviewer personas are not published on research-based guides.
     def fix_avatar(m):
-        fixes_applied.append(f'  [emoji-avatar] {os.path.relpath(filepath, REPO)}')
-        return f'<div class="avatar">{SVG_AVATAR}</div>'
+        fixes_applied.append(f'  [remove-avatar] {os.path.relpath(filepath, REPO)}')
+        return ''
     content = re.sub(
         r'<div class="avatar">[^<]*(?:&#127\d{3}|🏔|🏐|🏕|⛺|🌎|🧭)[^<]*</div>',
         fix_avatar, content

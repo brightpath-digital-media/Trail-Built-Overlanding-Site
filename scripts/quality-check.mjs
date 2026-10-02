@@ -113,7 +113,7 @@ for (const article of productBoxValidationArticles) {
     continue;
   }
   const text = fs.readFileSync(file, 'utf8');
-  const boxes = [...text.matchAll(/<div class="product-box"[\s\S]*?(?=<div class="product-box"|<h2 id="faq"|<p>We ran|<p>When choosing|<\/article>)/g)];
+  const boxes = [...text.matchAll(/<div class="product-box"[\s\S]*?(?=<div class="product-box"|<h2 id="faq"|<p>When choosing|<\/article>)/g)];
   const isStrictTarget = strictMinProductBoxArticles.includes(article);
   const result = {
     article,

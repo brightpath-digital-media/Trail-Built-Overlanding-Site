@@ -12,7 +12,7 @@ html = html.replace(
 
 # Add og: tags after the robots meta tag
 og_block = '''  <meta property="og:title" content="Best Overlanding Water Storage &amp; Filtration Systems (2026)" />
-  <meta property="og:description" content="Testing water storage and filtration systems, including filters and tanks, for off-grid adventures" />
+  <meta property="og:description" content="Research-based guidance on water storage and filtration systems, including filters and tanks, for off-grid planning" />
   <meta property="og:image" content="https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1200&auto=format&fit=crop" />
   <meta property="og:type" content="article" />'''
 

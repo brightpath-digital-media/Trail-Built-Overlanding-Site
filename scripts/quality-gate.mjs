@@ -22,12 +22,12 @@ const REPO = path.resolve(__dirname, '..');
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const CRITICAL_CHECKS = [
-  // Emoji that must never appear in published HTML
+  // Persona and placeholder markup that must never appear in published HTML
   {
-    id: 'emoji-avatar',
-    description: 'Emoji or HTML entity in avatar div',
-    pattern: /<div class="avatar">[^<]*(?:&#127\d{3}|🏔|🏐|🏕|⛺|🌎|🧭)[^<]*<\/div>/,
-    message: 'Avatar contains emoji/entity — use branded SVG avatar instead',
+    id: 'reviewer-avatar',
+    description: 'Reviewer avatar div',
+    pattern: /<div class="avatar">[\s\S]*?<\/div>/,
+    message: 'Reviewer avatar markup is prohibited on research-based pages',
   },
   {
     id: 'emoji-hero',

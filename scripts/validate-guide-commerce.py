@@ -89,15 +89,13 @@ def validate_itemlists(label: str, itemlists: list[dict], failures: list[str]) -
                 continue
             if product.get("@type") != "Product" or not product.get("name"):
                 failures.append(f"{label}: ItemList contains a non-Product item")
-            review = product.get("review")
-            if not isinstance(review, dict) or review.get("@type") != "Review":
+            # Research-based editorial picks must not imply a first-hand product
+            # review or a rating backed by unverified review inputs.
+            forbidden = {"review", "reviewRating", "aggregateRating", "ratingValue", "ratingCount"}.intersection(product)
+            if forbidden:
                 failures.append(
-                    f"{label}: Product '{product.get('name', 'unknown')}' missing editorial Review schema"
+                    f"{label}: Product '{product.get('name', 'unknown')}' has prohibited research-only schema field(s): {', '.join(sorted(forbidden))}"
                 )
-            # AggregateRating requires genuine review inputs and is emitted
-            # only by the dormant user-review component when activated.
-            if "aggregateRating" in product:
-                failures.append(f"{label}: Product '{product.get('name', 'unknown')}' has static aggregateRating")
 
 
 def amazon_anchors(raw: str):

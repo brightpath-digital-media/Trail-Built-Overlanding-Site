@@ -56,7 +56,7 @@ Here's the starter kit we recommend for every SUV build:
 
 3. **Dometic CFX3 35 Fridge/Freezer** — The compact version of our top-rated fridge, sized perfectly for SUV cargo areas. Dual-zone, app-controlled, and whisper-quiet. [See our full review →](https://trailbuiltoverland.com/articles/best-overlanding-fridges-and-coolers)
 
-4. **Baja Designs Squadron Pro Light Bar** — The brightest auxiliary lights we've tested at this price point. Spot/flood combo, IP69K waterproof, and a 5-year warranty. [See our full review →](https://trailbuiltoverland.com/articles/best-overlanding-light-bars)
+4. **Baja Designs Squadron Pro Light Bar** — A specification-led auxiliary-lighting option with a spot/flood combo, IP69K waterproofing, and a stated 5-year warranty. [See our full review →](https://trailbuiltoverland.com/articles/best-overlanding-light-bars)
 
 **Editor's Pick: Dometic CFX3 35 Fridge/Freezer**
 The CFX3 35 is the most-recommended fridge in the Trail Built community for a reason. It's compact enough for any SUV, efficient enough to run off a single auxiliary battery, and the app control means you can check temps without opening the tailgate.
@@ -78,7 +78,7 @@ trailbuiltoverland.com
 
 Welcome to Trail Built!
 
-Jeep overlanders have the most passionate community in off-roading — and the most aftermarket options. The challenge isn't finding gear; it's knowing which gear is actually worth it and which is just marketing. We've tested hundreds of products so you can skip the mistakes.
+Jeep overlanders have a deep aftermarket to navigate. The challenge is separating manufacturer claims from specifications, owner reports, and independent coverage that help explain trade-offs.
 
 Here's the starter kit we recommend for every Jeep build:
 
@@ -110,7 +110,7 @@ trailbuiltoverland.com
 
 Welcome to Trail Built!
 
-Van overlanders are building the most self-sufficient rigs on the road. Your platform gives you the interior space to create a true mobile basecamp — but getting the electrical, sleeping, cooking, and storage systems right takes research. We've done that research for you.
+Van platforms offer interior space for a mobile basecamp, but electrical, sleeping, cooking, and storage choices still require careful research. This guide compiles source-backed starting points for those decisions.
 
 Here's the starter kit we recommend for every van build:
 
@@ -142,19 +142,19 @@ trailbuiltoverland.com
 
 Welcome to Trail Built!
 
-We're glad you're here. Trail Built is an independent overlanding gear review site — we test and review the gear that actually matters for off-road travel, from recovery equipment and fridges to lighting and navigation.
+We're glad you're here. Trail Built is an independent overlanding gear publication with research-based guides to recovery equipment, fridges, lighting, navigation, and related planning decisions.
 
-No manufacturer freebies. No sponsored content. Just honest reviews from people who actually use this stuff in the field.
+No manufacturer freebies. No sponsored content. The guides compare manufacturer specifications, verified owner reports, warranties, and independent sources where available.
 
 Here are four of our most-read reviews to get you started:
 
-1. **Best Overlanding Recovery Gear** — Our complete guide to recovery boards, straps, shackles, and hi-lift jacks. Everything you need to get unstuck. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-recovery-gear)
+1. **Best Overlanding Recovery Gear** — A research-based guide to recovery boards, straps, shackles, and hi-lift jack alternatives. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-recovery-gear)
 
-2. **Best Overlanding Fridges & Coolers** — We tested 8 portable fridges over 6 months. Here's what we actually recommend. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-fridges-and-coolers)
+2. **Best Overlanding Fridges & Coolers** — A comparison of portable-fridge specifications, owner reports, and practical selection criteria. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-fridges-and-coolers)
 
 3. **Best Overlanding Winches** — The complete guide to choosing a winch for your rig, with head-to-head comparisons of the top models. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-winches)
 
-4. **Best Overlanding Light Bars** — Auxiliary lighting tested for brightness, beam pattern, and waterproofing. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-light-bars)
+4. **Best Overlanding Light Bars** — Auxiliary-lighting comparison guidance covering brightness, beam pattern, and waterproofing specifications. [Read the review →](https://trailbuiltoverland.com/articles/best-overlanding-light-bars)
 
 **Take the Quiz: Find Gear for Your Rig**
 Not sure where to start? Take our 5-question quiz and we'll recommend the best gear for your specific vehicle type and budget.

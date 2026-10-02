@@ -146,16 +146,10 @@ def fix_hero_tag_emoji(content):
 
 
 def fix_avatar_emoji(content):
-    """Replace emoji avatar with SVG avatar."""
+    """Remove reviewer avatar markup from research-based editorial pages."""
     content = re.sub(
-        r'<div class="avatar">[^<]*</div>',
-        f'<div class="avatar">{AVATAR_SVG}</div>',
-        content
-    )
-    # Also handle &#127952; and &#127960; (tent/mountain emoji as HTML entities)
-    content = re.sub(
-        r'<div class="avatar">&#\d+;</div>',
-        f'<div class="avatar">{AVATAR_SVG}</div>',
+        r'<div class="avatar">[\s\S]*?</div>',
+        '',
         content
     )
     return content
