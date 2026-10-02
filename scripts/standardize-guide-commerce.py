@@ -97,7 +97,7 @@ def product_records(soup: BeautifulSoup, filename: str) -> list[dict]:
     return records
 
 
-def cta(href: str, label: str = "Check Price on Amazon") -> Tag:
+def cta(href: str, label: str = "Check current price on Amazon") -> Tag:
     tag = BeautifulSoup("", "html.parser").new_tag("a", href=href)
     tag["class"] = ["btn-amazon"]
     tag["rel"] = "sponsored nofollow noopener"
@@ -140,7 +140,7 @@ def normalize_product_boxes(soup: BeautifulSoup, records: list[dict]) -> None:
                 existing["class"] = ["btn-amazon"]
                 existing["rel"] = "sponsored nofollow noopener"
                 existing["target"] = "_blank"
-                existing.string = "Check Price on Amazon"
+                existing.string = "Check current price on Amazon"
             else:
                 box.append(cta(f"https://www.amazon.com/dp/{asin}?tag={TAG}"))
         else:

@@ -21,7 +21,7 @@ const products = asins.map((asin, index) => ({
 }));
 const bodyHTML = `
 <h2 id="top-picks">Our Top Picks</h2>
-${products.map(product => `<div class="product-box" data-asin="${product.asin}" data-product="${product.name}"><div class="product-box-info"><h4>${product.name}</h4><p class="product-summary">${product.reviewBody}</p></div><a class="btn-amazon" data-asin="${product.asin}" href="https://www.amazon.com/dp/${product.asin}?tag=trailbuiltove-20" rel="sponsored nofollow noopener" target="_blank">Check Price on Amazon</a></div>`).join('\n')}
+${products.map(product => `<div class="product-box" data-asin="${product.asin}" data-product="${product.name}"><div class="product-box-info"><h4>${product.name}</h4><p class="product-summary">${product.reviewBody}</p></div><a class="btn-amazon" data-asin="${product.asin}" href="https://www.amazon.com/dp/${product.asin}?tag=trailbuiltove-20" rel="sponsored nofollow noopener" target="_blank">Check current price on Amazon</a></div>`).join('\n')}
 <h2 id="faq">FAQ</h2>
 <h3>Does the template emit product schema?</h3><p>Yes. It serializes each runtime-verified product as an ordered Product entry with an editorial Review.</p>
 <h3>Are direct product URLs preserved?</h3><p>Yes. The template emits the exact ASIN-based Amazon URL with the required associate tag.</p>

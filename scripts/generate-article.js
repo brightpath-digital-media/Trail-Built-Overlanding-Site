@@ -527,7 +527,7 @@ function canonicalProductBox(box, product, imageLocalPath) {
   const alt = `${product.name} overlanding gear`;
   const amazonUrl = `https://www.amazon.com/dp/${asin}?tag=${ASSOCIATE_TAG}`;
 
-  return `<div class="product-box" data-asin="${asin}" data-product="${escapeHtml(product.name)}"><div class="product-box-header"><div class="product-box-image"><img alt="${escapeHtml(alt)}" decoding="async" height="140" loading="lazy" src="../${imageLocalPath}" width="180"/></div><div class="product-box-info"><h4>${escapeHtml(heading)}</h4><p class="product-summary">${escapeHtml(description)}</p></div></div><div class="guide-product-meta"><span class="price" data-asin="${asin}" data-catalog-price="" hidden=""></span><span class="guide-availability" data-asin="${asin}" data-catalog-availability="" hidden=""></span><span class="guide-catalog-badge" data-asin="${asin}" data-catalog-badge="" hidden=""></span></div><div class="product-box-pros"><h5>Key Considerations</h5><ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><a class="btn-amazon" data-asin="${asin}" href="${amazonUrl}" rel="sponsored nofollow noopener" target="_blank">Check Price on Amazon</a></div>`;
+  return `<div class="product-box" data-asin="${asin}" data-product="${escapeHtml(product.name)}"><div class="product-box-header"><div class="product-box-image"><img alt="${escapeHtml(alt)}" decoding="async" height="140" loading="lazy" src="../${imageLocalPath}" width="180"/></div><div class="product-box-info"><h4>${escapeHtml(heading)}</h4><p class="product-summary">${escapeHtml(description)}</p></div></div><div class="guide-product-meta"><span class="price" data-asin="${asin}" data-catalog-price="" hidden=""></span><span class="guide-availability" data-asin="${asin}" data-catalog-availability="" hidden=""></span><span class="guide-catalog-badge" data-asin="${asin}" data-catalog-badge="" hidden=""></span></div><div class="product-box-pros"><h5>Key Considerations</h5><ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><a class="btn-amazon" data-asin="${asin}" href="${amazonUrl}" rel="sponsored nofollow noopener" target="_blank">Check current price on Amazon</a></div>`;
 }
 
 async function conformProductBoxes(bodyHTML, pool, slug, downloader = downloadProductImage) {
@@ -1086,7 +1086,6 @@ ${articleFooter}
 
 <script src="../js/main.js"><\/script>
 <script src="../js/amazon.js"><\/script>
-<script src="../js/price-history.js"><\/script>
 <script src="../js/guide-commerce.js"><\/script>
 ${buildMobileStickyCta()}
 </body>

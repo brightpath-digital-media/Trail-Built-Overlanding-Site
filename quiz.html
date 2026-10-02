@@ -448,7 +448,6 @@
 <script src="js/products-data.js"></script>
 <script src="js/amazon.js"></script>
 <script src="js/main.js"></script>
-<script src="js/price-history.js"></script>
 <script>
 // ── Trail Built Vehicle Quiz ──────────────────────────────────────────────────
 const QUIZ_KEY = "trailbuilt_vehicle_type";
@@ -503,10 +502,10 @@ const QUESTIONS = [
     question: "What's your gear budget per year?",
     subtitle: "We'll tailor recommendations to your spend level.",
     options: [
-      { value: "budget",    icon: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=80&q=80", label: "Under $500",    desc: "Best bang-for-buck picks" },
-      { value: "mid",       icon: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=80&q=80", label: "$500–$2,000",   desc: "Mid-range, proven gear" },
-      { value: "premium",   icon: "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=80&q=80", label: "$2,000–$5,000", desc: "Premium, long-lasting builds" },
-      { value: "unlimited", icon: "🚀", label: "$5,000+",       desc: "Expedition-grade, no compromises" },
+      { value: "budget",    icon: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=80&q=80", label: "Entry",          desc: "Streamlined planning choices" },
+      { value: "mid",       icon: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=80&q=80", label: "Mid-range",      desc: "Balanced planning choices" },
+      { value: "premium",   icon: "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=80&q=80", label: "Expanded",      desc: "Broader build planning" },
+      { value: "unlimited", icon: "🚀", label: "Complex build", desc: "Detailed component planning" },
     ]
   }
 ];
@@ -668,11 +667,8 @@ function renderQuestion() {
     <div class="qz-options">
       ${q.options.map(opt => `
         <button class="qz-option${selected === opt.value ? ' selected' : ''}" data-value="${opt.value}" type="button">
-          ${opt.icon.startsWith('http') ? `<img class="qz-option-icon-img" src="${opt.icon.includes('&h=') || opt.icon.includes('?h=') ? opt.icon : opt.icon + '&fit=crop&h=96'}" alt="${opt.label}" loading="lazy" width="48" height="48">` : `<span class="qz-option-icon">${opt.icon}</span>`}
-          <span>
-            <div class="qz-option-label">${opt.label}</div>
-            <div class="qz-option-desc">${opt.desc}</div>
-          </span>
+          ${opt.icon.startsWith('http') ? `<img class="qz-option-icon-img" src="${opt.icon.includes('&h=') || opt.icon.includes('?h=') ? opt.icon : opt.icon + '&fit=crop&h=96'}" alt="${opt.label}" loading="lazy" width="48" height="48">` : `<span class="qz-option-icon">Check current price</span>`}
+          <span>Check current price</span>
         </button>
       `).join("")}
     </div>
@@ -736,8 +732,8 @@ function showResult(vehicleType) {
         <img src="${p.img}" alt="${p.alt}" loading="lazy" />
       </div>
       <div class="card-body">
-        <div class="card-meta"><span class="badge">${p.tag}</span></div>
-        <h3 style="font-size:0.92rem;">${p.name}</h3>
+        <div class="card-meta"><span class="badge">Check current price</span></div>
+        <h3 style="font-size:0.92rem;">Research-based equipment planning</h3>
         <div class="qz-product-cta">Read review &rarr;</div>
       </div>
     </a>

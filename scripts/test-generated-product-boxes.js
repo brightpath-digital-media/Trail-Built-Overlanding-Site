@@ -30,7 +30,7 @@ const generatedBody = asins.map((asin, index) => `
   <h4>Stub Recovery Product ${index + 1}</h4>
   <p>A fixed local test recommendation for recovery and overlanding use.</p>
   <ul><li>Useful for prepared vehicle travel</li><li>Easy to store in a trail kit</li></ul>
-  <a href="https://www.amazon.com/dp/${asin}?tag=trailbuiltove-20">Check Price on Amazon</a>
+  <a href="https://www.amazon.com/dp/${asin}?tag=trailbuiltove-20">Check current price on Amazon</a>
 </div>`).join('\n') + '\n<h2 id="faq">FAQ</h2><p>Stub FAQ content.</p>';
 
 async function placeholderDownloader(_url, destination) {

@@ -37,6 +37,8 @@ const RULES = [
   ['test-mule-claim', /\btest\s+mule\b/gi, 'unsupported test-mule claim'],
   ['we-found-claim', /\bwe\s+found\b/gi, 'unsupported first-person finding'],
   ['after-testing-claim', /\bafter\s+(?:rigorous\s+)?testing\b/gi, 'unsupported post-testing claim'],
+  ['static-product-price', /(?:\bpriceDisplay\s*:\s*["'](?:~|≈)?\s*\$|\bprice\s*:\s*(?!0(?:\.0+)?\b)\d+(?:\.\d+)?|\$\s*(?:\d{2,}\b|\d+\.\d{2}\b))/gi, 'static product price or stale price payload'],
+  ['unverified-manufacturer-number', /\bmanufacturer[-\s](?:listed|rated|specified)\b(?:(?![.!?]).){0,160}\d/gi, 'manufacturer-qualified numeric specification without a source record'],
 ];
 
 function existing(relative) {
@@ -60,7 +62,7 @@ function copySources() {
     ...filesWithExtensions('templates', ['.html']), ...filesWithExtensions('email-templates', ['.html']),
     ...filesWithExtensions('newsletters', ['.html', '.json']),
     ...filesWithExtensions('data', ['.json']),
-    ...existing('js/main.js'),
+    ...existing('js/main.js'), ...existing('js/products-data.js'), ...existing('js/price-history.js'),
     ...existing('scripts/generate-article.js'),
     ...existing('scripts/sanitize-articles.mjs'),
     ...existing('scripts/standardize-guide-commerce.py'),

@@ -27,6 +27,8 @@ try {
     ['test-mule-claim', 'The Tacoma served as a test mule.'],
     ['we-found-claim', 'We found that the product ran quietly.'],
     ['after-testing-claim', 'After rigorous testing, this is the winner.'],
+    ['static-product-price', 'Current offer: $499 beside the Amazon link.'],
+    ['unverified-manufacturer-number', 'Manufacturer-listed capacity is 1,002 Wh.'],
   ];
   for (const [rule, text] of seededViolations) {
     fs.writeFileSync(page, `<!doctype html><p>${text}</p>\n`);
@@ -35,9 +37,9 @@ try {
     assert.match(seeded.stderr, new RegExp(`\\[${rule}\\]`), `${rule} must identify itself`);
   }
 
-  fs.writeFileSync(page, '<!doctype html><p>Manufacturer-listed capacity is 1,002 Wh; consult the published specification and fitment documentation before purchase.</p>\n');
+  fs.writeFileSync(page, '<!doctype html><p>Consult the linked manufacturer or seller listing for current specifications and fitment before purchase.</p>\n');
   const clean = spawnSync(process.execPath, [linter, '--root', fixture], { encoding: 'utf8' });
-  assert.strictEqual(clean.status, 0, `legitimate manufacturer-listed specification must pass: ${clean.stderr || clean.stdout}`);
+  assert.strictEqual(clean.status, 0, `research-based listing guidance must pass: ${clean.stderr || clean.stdout}`);
   console.log('Research-claims linter regression test passed.');
 } finally {
   fs.rmSync(fixture, { recursive: true, force: true });

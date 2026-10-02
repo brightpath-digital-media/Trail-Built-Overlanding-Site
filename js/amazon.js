@@ -131,7 +131,7 @@
    * Or for articles: <div class="price" data-asin="B0F55VMN66"></div>
    *
    * Freshness gate: if window.TrailBuiltLastSyncedAt is missing or older than
-   * 24 hours, numeric prices are hidden and replaced with a 'Check price on
+   * 24 hours, numeric prices are hidden and replaced with a 'Check current price on
    * Amazon' affiliate link (correct tag: trailbuiltove-20) instead.
    */
   function injectLivePrices() {
@@ -154,7 +154,7 @@
         link.href = amazonLink(asin);
         link.target = "_blank";
         link.rel = "sponsored nofollow noopener";
-        link.textContent = "Check price on Amazon";
+        link.textContent = "Check current price on Amazon";
         el.textContent = "";
         el.appendChild(link);
       } else {
