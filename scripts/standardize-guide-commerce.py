@@ -97,7 +97,7 @@ def product_records(soup: BeautifulSoup, filename: str) -> list[dict]:
     return records
 
 
-def cta(href: str, label: str = "Check Price on Amazon") -> Tag:
+def cta(href: str, label: str = "Check current price on Amazon") -> Tag:
     tag = BeautifulSoup("", "html.parser").new_tag("a", href=href)
     tag["class"] = ["btn-amazon"]
     tag["rel"] = "sponsored nofollow noopener"
@@ -140,7 +140,7 @@ def normalize_product_boxes(soup: BeautifulSoup, records: list[dict]) -> None:
                 existing["class"] = ["btn-amazon"]
                 existing["rel"] = "sponsored nofollow noopener"
                 existing["target"] = "_blank"
-                existing.string = "Check Price on Amazon"
+                existing.string = "Check current price on Amazon"
             else:
                 box.append(cta(f"https://www.amazon.com/dp/{asin}?tag={TAG}"))
         else:
@@ -152,7 +152,7 @@ def normalize_product_boxes(soup: BeautifulSoup, records: list[dict]) -> None:
 def generated_fridge_cards(soup: BeautifulSoup, records: list[dict]) -> Tag:
     section = soup.new_tag("section", attrs={"class": "guide-fridge-picks", "data-guide-generated": "true"})
     title = soup.new_tag("h2")
-    title.string = "Our Fridge Picks at a Glance"
+    title.string = "Fridge Picks at a Glance"
     section.append(title)
     for record in records:
         box = soup.new_tag("div", attrs={"class": "product-box guide-generated-product"})
@@ -271,7 +271,7 @@ def ensure_faq(soup: BeautifulSoup) -> list[tuple[str, str]]:
     heading.string = "Buyer’s Guide FAQ"
     section.append(heading)
     generated = [
-        ("How are products selected for this guide?", "Trail Built compares products against the use cases, specifications, and practical trade-offs explained in this guide. Read the individual product sections and our testing methodology before choosing the option that fits your rig and trip style."),
+        ("How are products selected for this guide?", "Trail Built compares published specifications, fitment, warranty details, availability, and the practical trade-offs explained in this guide. Read the individual product sections and the research methodology before choosing an option for a vehicle and trip plan."),
         ("Why is a price or availability label sometimes missing?", "Amazon prices and availability change frequently. Trail Built shows catalog data only after a recent Amazon catalog refresh; otherwise, it hides the value rather than displaying stale information."),
     ]
     for question, answer in generated:
@@ -280,18 +280,13 @@ def ensure_faq(soup: BeautifulSoup) -> list[tuple[str, str]]:
         p = soup.new_tag("p")
         p.string = answer
         section.extend([h3, p])
-    # Keep user-review and share components after editorial content.
-    first_non_editorial = article.select_one(".user-reviews, .share-bar")
+    # Keep sharing controls after editorial content.
+    first_non_editorial = article.select_one(".share-bar")
     if first_non_editorial:
         first_non_editorial.insert_before(section)
     else:
         article.append(section)
     return generated
-
-
-def author_name(soup: BeautifulSoup) -> str:
-    byline = soup.select_one(".article-byline strong")
-    return clean(byline.get_text(" ", strip=True)) if byline else "Trail Built Staff"
 
 
 def upsert_schema(soup: BeautifulSoup, records: list[dict], filename: str, faqs: list[tuple[str, str]]) -> None:
@@ -304,19 +299,13 @@ def upsert_schema(soup: BeautifulSoup, records: list[dict], filename: str, faqs:
             node.decompose()
     canonical = soup.select_one("link[rel='canonical']")
     url = canonical.get("href") if canonical else f"{SITE}/articles/{filename}"
-    author = author_name(soup)
     items = []
     for index, record in enumerate(records, 1):
         product = {"@type": "Product", "name": record["display_name"]}
         if record["asin"]:
             product["sku"] = record["asin"]
             product["url"] = f"https://www.amazon.com/dp/{record['asin']}?tag={TAG}"
-        product["review"] = {
-            "@type": "Review",
-            "name": "Trail Built editorial review",
-            "author": {"@type": "Person", "name": author},
-            "reviewBody": record["spec"],
-        }
+        product["description"] = record["spec"]
         items.append({"@type": "ListItem", "position": index, "item": product})
     itemlist = {
         "@context": "https://schema.org",

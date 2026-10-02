@@ -31,7 +31,7 @@ const SEARCH_INDEX = [
   { title: "Best Overlanding Recovery Gear: 2026 Buyer's Guide", url: 'articles/best-overlanding-recovery-gear.html', tags: 'recovery kinetic rope shackle maxtrax tred winch' },
   { title: 'Best Off-Road Light Bars 2026: From Budget to Pro', url: 'articles/best-off-road-light-bars.html', tags: 'lighting led light bar spotlight off-road' },
   { title: 'Rooftop Tent Buying Guide: Every Type, Ranked', url: 'articles/rooftop-tent-buying-guide.html', tags: 'rooftop tent rtt hard shell soft shell sleeping' },
-  { title: 'Best Overlanding Winches 2026: Tested and Ranked', url: 'articles/best-overlanding-winches.html', tags: 'winch warn synthetic rope recovery' },
+  { title: 'Best Overlanding Winches 2026: Research-Based Rankings', url: 'articles/best-overlanding-winches.html', tags: 'winch warn synthetic rope recovery' },
   { title: 'Best Overlanding Fridges and Coolers 2026', url: 'articles/best-overlanding-fridges.html', tags: 'fridge cooler dometic arb camp kitchen' },
   { title: 'Best Overlanding Solar and Power Systems 2026', url: 'articles/best-overlanding-solar-and-power.html', tags: 'solar power station battery dual battery' },
   { title: '4Runner 5th Gen Overlanding Build Guide', url: 'articles/4runner-5th-gen-overland-build-guide.html', tags: '4runner toyota build guide mods' },

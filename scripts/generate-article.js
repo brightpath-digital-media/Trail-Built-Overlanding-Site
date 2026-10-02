@@ -387,7 +387,7 @@ async function validateBodyAsins(bodyHTML, pool, verifier = createAsinVerifier()
 }
 
 // ── Product-card image conformance ───────────────────────────────────────────
-const PRODUCT_BOX_RE = /<div class="product-box"[\s\S]*?(?=<div class="product-box"|<h2 id="faq"|<p>We ran|<p>When choosing|<\/article>|$)/g;
+const PRODUCT_BOX_RE = /<div class="product-box"[\s\S]*?(?=<div class="product-box"|<h2 id="faq"|<p>When choosing|<\/article>|$)/g;
 
 function imageExtension(url) {
   try {
@@ -522,12 +522,12 @@ function canonicalProductBox(box, product, imageLocalPath) {
     .slice(0, 3);
   const reasons = listItems.length >= 2
     ? listItems
-    : [`${product.name} is selected from the runtime-verified product pool.`, 'Its practical format suits vehicle-based travel and camp use.'];
+    : [`${product.name} is selected from the runtime-verified product pool.`, 'Published dimensions, fitment, and feature details support comparison for vehicle-based travel and camp use.'];
   const asin = product.asin;
   const alt = `${product.name} overlanding gear`;
   const amazonUrl = `https://www.amazon.com/dp/${asin}?tag=${ASSOCIATE_TAG}`;
 
-  return `<div class="product-box" data-asin="${asin}" data-product="${escapeHtml(product.name)}"><div class="product-box-header"><div class="product-box-image"><img alt="${escapeHtml(alt)}" decoding="async" height="140" loading="lazy" src="../${imageLocalPath}" width="180"/></div><div class="product-box-info"><h4>${escapeHtml(heading)}</h4><p class="product-summary">${escapeHtml(description)}</p></div></div><div class="guide-product-meta"><span class="price" data-asin="${asin}" data-catalog-price="" hidden=""></span><span class="guide-availability" data-asin="${asin}" data-catalog-availability="" hidden=""></span><span class="guide-catalog-badge" data-asin="${asin}" data-catalog-badge="" hidden=""></span></div><div class="product-box-pros"><h5>Why We Like It</h5><ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><a class="btn-amazon" data-asin="${asin}" href="${amazonUrl}" rel="sponsored nofollow noopener" target="_blank">Check Price on Amazon</a></div>`;
+  return `<div class="product-box" data-asin="${asin}" data-product="${escapeHtml(product.name)}"><div class="product-box-header"><div class="product-box-image"><img alt="${escapeHtml(alt)}" decoding="async" height="140" loading="lazy" src="../${imageLocalPath}" width="180"/></div><div class="product-box-info"><h4>${escapeHtml(heading)}</h4><p class="product-summary">${escapeHtml(description)}</p></div></div><div class="guide-product-meta"><span class="price" data-asin="${asin}" data-catalog-price="" hidden=""></span><span class="guide-availability" data-asin="${asin}" data-catalog-availability="" hidden=""></span><span class="guide-catalog-badge" data-asin="${asin}" data-catalog-badge="" hidden=""></span></div><div class="product-box-pros"><h5>Key Considerations</h5><ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><a class="btn-amazon" data-asin="${asin}" href="${amazonUrl}" rel="sponsored nofollow noopener" target="_blank">Check current price on Amazon</a></div>`;
 }
 
 async function conformProductBoxes(bodyHTML, pool, slug, downloader = downloadProductImage) {
@@ -577,11 +577,11 @@ function extractProductSchemaRecords(bodyHTML, pool) {
       throw new Error(`[commerce-schema] Duplicate product ASIN in generated article: ${asin}`);
     }
     seenAsins.add(asin);
-    const reviewBody = plainText(box.match(/<p\b[^>]*class=(['"])\s*product-summary\s*\1[^>]*>([\s\S]*?)<\/p>/i)?.[2]);
-    if (!reviewBody) {
-      throw new Error(`[commerce-schema] Product ${asin} is missing a canonical product summary for its editorial Review schema.`);
+    const summary = plainText(box.match(/<p\b[^>]*class=(['"])\s*product-summary\s*\1[^>]*>([\s\S]*?)<\/p>/i)?.[2]);
+    if (!summary) {
+      throw new Error(`[commerce-schema] Product ${asin} is missing a canonical product summary for its ItemList entry.`);
     }
-    return { asin, name: product.name, reviewBody };
+    return { asin, name: product.name, summary };
   });
 }
 
@@ -617,12 +617,7 @@ function buildCommerceSchemas({ title, articleUrl, bodyHTML, products }) {
         name: product.name,
         sku: product.asin,
         url: `https://www.amazon.com/dp/${product.asin}?tag=${ASSOCIATE_TAG}`,
-        review: {
-          '@type': 'Review',
-          name: 'Trail Built editorial review',
-          author: { '@type': 'Person', name: 'Trail Built Staff' },
-          reviewBody: product.reviewBody,
-        },
+        description: product.summary,
       },
     })),
   };
@@ -639,7 +634,7 @@ function buildCommerceSchemas({ title, articleUrl, bodyHTML, products }) {
 }
 
 function buildComparisonTable(products) {
-  return `<section class="guide-comparison" data-guide-generated="true"><div class="guide-comparison-header"><h2>Compare the Top Picks</h2><p class="guide-comparison-note">Review each product section for current Amazon availability and offer details.</p></div><div class="guide-table-wrap"><table class="guide-comparison-table"><thead><tr><th>Product</th><th>Key spec(s)</th><th>Review</th></tr></thead><tbody>${products.map(product => `<tr><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.reviewBody)}</td><td><a href="#top-picks">See pick</a></td></tr>`).join('')}</tbody></table></div></section>`;
+  return `<section class="guide-comparison" data-guide-generated="true"><div class="guide-comparison-header"><h2>Compare the Top Picks</h2><p class="guide-comparison-note">Review each product section for current Amazon availability and offer details.</p></div><div class="guide-table-wrap"><table class="guide-comparison-table"><thead><tr><th>Product</th><th>Key details</th><th>Guide section</th></tr></thead><tbody>${products.map(product => `<tr><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.summary)}</td><td><a href="#top-picks">See pick</a></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
 function loadArticleFooter() {
@@ -868,23 +863,23 @@ async function generateArticleContent(topic, pool = loadVerifiedPool(), excluded
     ? `Use at least ${MIN_PRODUCT_BOXES} and up to ${relevantProducts.length} relevant product recommendations from the approved pool.`
     : `The approved pool has only ${relevantProducts.length} relevant product(s), so do not generate this article: its topic does not have the ${MIN_PRODUCT_BOXES} qualified products required by the publish quality gate.`;
 
-  const systemPrompt = `You are an expert overlanding writer for TrailBuiltOverland.com, an affiliate review site.
-Write in a confident, practical, first-person-plural voice ("we tested", "we ran it for 3 months").
+  const systemPrompt = `You are an expert overlanding writer for TrailBuiltOverland.com, a research-based affiliate review site.
+Write in a clear, practical, third-person editorial voice. Do not claim that Trail Built or any writer conducted product trials, drove, owned, bought, used, or ran a product. Do not invent sources, statistics, quotes, prices, warranties, or performance results. Frame comparisons around published manufacturer specifications, verified owner reviews, long-term owner reports, and independent data only where the supplied source material supports it.
 Every article must include:
 - A compelling intro paragraph
 - ${productCountInstruction}
 - Amazon affiliate links formatted only as: https://www.amazon.com/dp/ASIN?tag=${ASSOCIATE_TAG}
 - Product recommendations ONLY when their exact name and ASIN appear in the approved product pool below. Never guess, transform, or introduce any ASIN. Do not use an Amazon search URL, shortened URL, product family URL, or placeholder. Each product MUST have a UNIQUE ASIN.
-- Pros/cons or "why we like it" for each included product
+- Key considerations for each included product, grounded in published product information
 - At least one FAQ section with 3 questions
 - An affiliate disclosure reminder in the footer note
 Write clean HTML fragments only (no <html>/<head>/<body> tags).
 Use <h2>, <h3>, <p>, <ul>, <li>, <strong> tags only outside of product boxes.
 For each included product recommendation, wrap in a <div class="product-box" data-product="PRODUCT NAME" data-asin="ASIN"> containing an <h4>, one descriptive <p>, a <ul> with 2–3 <li> points, and the direct tagged Amazon product link. Do NOT emit <img>, prices, image wrappers, product metadata spans, emoji, or any other product-card presentation markup: the generator supplies the site-standard local-image product card after validation.`;
 
-  const userPrompt = `Write a comprehensive buyer's guide article titled "Best ${topic.charAt(0).toUpperCase() + topic.slice(1)} 2026".
+  const userPrompt = `Write a comprehensive research-based buyer's guide titled "Best ${topic.charAt(0).toUpperCase() + topic.slice(1)} 2026".
 ${productCountInstruction}
-Make it around 1,200-1,500 words. Be specific with product names, prices, and real-world testing details.
+Make it around 1,200-1,500 words. Be specific with exact product names, published specifications, fitment, current availability, and warranty information only when supplied. Do not claim personal or Trail Built product use, trials, driving, ownership, or mileage.
 Each product MUST use the exact corresponding name and ASIN from the approved pool. Use the concrete https://www.amazon.com/dp/{exact approved ASIN}?tag=${ASSOCIATE_TAG} destination. Do NOT create Amazon search links, reuse ASINs, leave placeholders, recommend a product outside the pool, or include a product when no relevant approved entry exists. Do not add any product image or price markup; the generator will inject the canonical local-image card layout after validation.
 
 Approved topic-relevant product pool (the complete allowed list for this article):
@@ -899,9 +894,9 @@ End with a 3-question FAQ section using <h2 id="faq">FAQ</h2> and <h3> for each 
 }
 
 async function generateMeta(topic) {
-  const prompt = `For an overlanding affiliate article about "${topic}", write:
+  const prompt = `For a research-based overlanding affiliate article about "${topic}", write:
 1. A title tag (max 65 chars, include "2026")
-2. A meta description (min 100 chars, max 155 chars, mention testing, year 2026, and specific product types)
+2. A meta description (min 100 chars, max 155 chars, mention research, year 2026, and specific product types)
 
 Do not provide image URLs; article heroes are selected deterministically from the curated local hero library.
 Return as JSON: {"title": "...", "description": "..."}`;
@@ -914,14 +909,14 @@ Return as JSON: {"title": "...", "description": "..."}`;
     const parsed = JSON.parse(raw.trim());
     // Enforce minimum description length
     if (parsed.description && parsed.description.length < 100) {
-      parsed.description = parsed.description + ` Our team tested the top-rated options in the field to find the best picks for every budget and overlanding build style in 2026.`;
+      parsed.description = parsed.description + ` Compare published specifications, fitment, pricing, and warranty details for overlanding build planning in 2026.`;
       if (parsed.description.length > 155) parsed.description = parsed.description.substring(0, 152) + '...';
     }
     return parsed;
   } catch {
     return {
       title: `Best ${topic} 2026 — Trail Built`,
-      description: `Expert overlanding gear reviews for ${topic} in 2026. Our team tested the top-rated options in the field to find the best picks for every budget and build.`,
+      description: `Research-based overlanding gear reviews for ${topic} in 2026, comparing published specifications, fitment, pricing, and warranty information.`,
     };
   }
 }
@@ -976,7 +971,7 @@ function buildHTML({ slug, title, description, ogImage, topic, bodyHTML, date, d
     "dateModified": "${date}",
     "url": "${articleUrl}",
     "mainEntityOfPage": { "@type": "WebPage", "@id": "${articleUrl}" },
-    "author": { "@type": "Person", "name": "Trail Built Staff" },
+    "author": { "@type": "Organization", "name": "Trail Built Editorial", "url": "${SITE_URL}/about.html" },
     "publisher": {
       "@type": "Organization",
       "name": "Trail Built",
@@ -1032,13 +1027,6 @@ function buildHTML({ slug, title, description, ogImage, topic, bodyHTML, date, d
         </div>
         <h1>${escapeHtml(cleanTitle)}</h1>
         <p class="article-intro">${escapeHtml(description)}</p>
-        <div class="article-byline">
-          <div class="avatar">&#127952;</div>
-          <div class="byline-info">
-            <strong>Trail Built Staff</strong>
-            <span>Published ${dateHuman}</span>
-          </div>
-        </div>
       </div>
       <div class="article-img-hero">
         <img src="${escapeHtml(ogImage)}" alt="${escapeHtml(cleanTitle)}" width="600" height="400" loading="lazy" decoding="async" />
@@ -1059,7 +1047,7 @@ function buildHTML({ slug, title, description, ogImage, topic, bodyHTML, date, d
       </div>
 
       ${buildComparisonTable(products)}
-      ${bodyHTML.replace(/<h2(\b[^>]*)>\s*Our Top Picks\s*<\/h2>/i, '<h2$1 id="top-picks">Our Top Picks</h2>')}
+      ${bodyHTML.replace(/<h2(\b[^>]*)>\s*(?:Our )?Top Picks\s*<\/h2>/i, '<h2$1 id="top-picks">Top Picks</h2>')}
     </article>
 
     <aside class="article-sidebar">
@@ -1098,7 +1086,6 @@ ${articleFooter}
 
 <script src="../js/main.js"><\/script>
 <script src="../js/amazon.js"><\/script>
-<script src="../js/price-history.js"><\/script>
 <script src="../js/guide-commerce.js"><\/script>
 ${buildMobileStickyCta()}
 </body>
@@ -1118,7 +1105,7 @@ function synchronizeHomepageLatest() {
   execFileSync(process.execPath, [path.join(__dirname, 'sync-homepage-latest.js')], { stdio: 'inherit' });
 }
 
-// ANCHOR: we locate the insertion point by finding the stable
+// ANCHOR: locate the insertion point by finding the stable
 // '<!-- ===== TOP PRODUCT' comment and inserting the new card immediately
 // before the </section> that precedes it.  This is whitespace-insensitive
 // and survives any future HTML reformatting of that section.
@@ -1293,7 +1280,7 @@ async function main() {
   console.log('Done.');
 }
 
-// Export helpers for unit testing; only run main() when invoked directly.
+// Export helpers for unit checks; only run main() when invoked directly.
 if (require.main === module) {
   main().catch(err => { console.error(err); process.exit(1); });
 }

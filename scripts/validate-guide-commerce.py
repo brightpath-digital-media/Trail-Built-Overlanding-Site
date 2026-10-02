@@ -8,6 +8,7 @@ committed HTML without needing any external Python package.
 from __future__ import annotations
 
 import json
+import html
 import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -58,7 +59,9 @@ def json_ld(raw: str) -> list[dict]:
     return parsed
 
 
-def validate_itemlists(label: str, itemlists: list[dict], failures: list[str]) -> None:
+def validate_itemlists(
+    label: str, itemlists: list[dict], visible_product_names: list[str], failures: list[str]
+) -> None:
     """Append named ItemList failures without assuming nested JSON-LD shapes."""
     if not itemlists:
         failures.append(f"{label}: missing ItemList JSON-LD")
@@ -74,6 +77,17 @@ def validate_itemlists(label: str, itemlists: list[dict], failures: list[str]) -
         if not elements:
             failures.append(f"{label}: ItemList {itemlist_number} has an empty itemListElement array")
             continue
+        declared_count = itemlist.get("numberOfItems")
+        if declared_count != len(elements):
+            failures.append(
+                f"{label}: ItemList {itemlist_number} numberOfItems={declared_count!r} "
+                f"does not equal its {len(elements)} itemListElement entries"
+            )
+        if len(visible_product_names) != len(elements):
+            failures.append(
+                f"{label}: ItemList {itemlist_number} has {len(elements)} entries but "
+                f"the article renders {len(visible_product_names)} product cards"
+            )
 
         for item_number, list_item in enumerate(elements, 1):
             if not isinstance(list_item, dict):
@@ -89,15 +103,21 @@ def validate_itemlists(label: str, itemlists: list[dict], failures: list[str]) -
                 continue
             if product.get("@type") != "Product" or not product.get("name"):
                 failures.append(f"{label}: ItemList contains a non-Product item")
-            review = product.get("review")
-            if not isinstance(review, dict) or review.get("@type") != "Review":
+            elif item_number <= len(visible_product_names):
+                expected_name = visible_product_names[item_number - 1]
+                actual_name = clean_text(str(product.get("name", "")))
+                if actual_name != expected_name:
+                    failures.append(
+                        f"{label}: ItemList product {item_number} name {actual_name!r} "
+                        f"does not match rendered product card {expected_name!r}"
+                    )
+            # Research-based editorial picks must not imply a first-hand product
+            # review or a rating backed by unverified review inputs.
+            forbidden = {"review", "reviewRating", "aggregateRating", "ratingValue", "ratingCount"}.intersection(product)
+            if forbidden:
                 failures.append(
-                    f"{label}: Product '{product.get('name', 'unknown')}' missing editorial Review schema"
+                    f"{label}: Product '{product.get('name', 'unknown')}' has prohibited research-only schema field(s): {', '.join(sorted(forbidden))}"
                 )
-            # AggregateRating requires genuine review inputs and is emitted
-            # only by the dormant user-review component when activated.
-            if "aggregateRating" in product:
-                failures.append(f"{label}: Product '{product.get('name', 'unknown')}' has static aggregateRating")
 
 
 def amazon_anchors(raw: str):
@@ -116,6 +136,24 @@ def product_box_asins(raw: str):
         asin = attr_value(attrs, "data-asin").upper()
         if asin and ("product-box" in class_name or "product-card" in class_name):
             yield asin, match.end()
+
+
+def clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value))).strip()
+
+
+def visible_product_card_names(raw: str) -> list[str]:
+    """Return canonical product-card names, including standardized fridge cards."""
+    names: list[str] = []
+    for match in re.finditer(r"<div\b(?P<attrs>[^>]*)>", raw, re.I | re.S):
+        attrs = match.group("attrs")
+        classes = set(attr_value(attrs, "class").split())
+        if "product-box" in classes or "product-card" in classes:
+            heading = re.search(r"<h[34]\b[^>]*>(.*?)</h[34]>", raw[match.end():match.end() + 5000], re.I | re.S)
+            name = clean_text(heading.group(1)) if heading else clean_text(attr_value(attrs, "data-product"))
+            if name:
+                names.append(name)
+    return names
 
 
 def main() -> int:
@@ -145,7 +183,7 @@ def main() -> int:
 
         itemlists = [schema for schema in parsed_schemas if schema.get("@type") == "ItemList"]
         if label not in CONCEPT_GUIDES:
-            validate_itemlists(label, itemlists, failures)
+            validate_itemlists(label, itemlists, visible_product_card_names(raw), failures)
 
         if label not in CONCEPT_GUIDES and "data-guide-sticky=" not in raw:
             failures.append(f"{label}: missing mobile sticky CTA")

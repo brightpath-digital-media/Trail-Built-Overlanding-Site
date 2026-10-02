@@ -29,13 +29,13 @@
   <meta name="description" content="Answer 5 quick questions and get a personalized overlanding gear list matched to your vehicle, experience level, and adventure style." />
   <meta name="robots" content="index, follow" />
   <meta property="og:title" content="What&#x27;s Your Overlanding Style? | Trail Built Overland's Your Overlanding Style? — Trail Built" />
-  <meta property="og:description" content="Get personalized gear recommendations matched to your rig and adventure style in 2 minutes." />
+  <meta property="og:description" content="Get personalized gear recommendations matched to your rig and adventure style through a short guided quiz." />
   <meta property="og:url" content="https://trailbuiltoverland.com/quiz.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://images.pexels.com/photos/8648642/pexels-photo-8648642.jpeg?auto=compress&cs=tinysrgb&w=1200" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="What&#x27;s Your Overlanding Style? | Trail Built Overland's Your Overlanding Style? — Trail Built" />
-  <meta name="twitter:description" content="Get personalized gear recommendations matched to your rig and adventure style in 2 minutes." />
+  <meta name="twitter:description" content="Get personalized gear recommendations matched to your rig and adventure style through a short guided quiz." />
   <meta name="twitter:image" content="https://images.pexels.com/photos/8648642/pexels-photo-8648642.jpeg?auto=compress&cs=tinysrgb&w=1200" />
   
   <link rel="icon" type="image/svg+xml" href="images/favicon.svg" />
@@ -221,26 +221,8 @@
       .qz-nav .btn-primary { flex: none; }
     }
   </style>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebPage",
-    "name": "What's Your Overlanding Style? — Trail Built",
-    "description": "Find your overlanding style and get personalized gear recommendations.",
-    "url": "https://trailbuiltoverland.com/quiz.html",
-    "isPartOf": { "@id": "https://trailbuiltoverland.com/#website" }
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://trailbuiltoverland.com/" },
-      { "@type": "ListItem", "position": 2, "name": "Overlanding Style Quiz", "item": "https://trailbuiltoverland.com/quiz.html" }
-    ]
-  }
-  </script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"What's Your Overlanding Style? — Trail Built","description":"Find your overlanding style and get personalized gear recommendations.","url":"https://trailbuiltoverland.com/quiz.html","isPartOf":{"@id":"https://trailbuiltoverland.com/#website"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://trailbuiltoverland.com/"},{"@type":"ListItem","position":2,"name":"Overlanding Style Quiz","item":"https://trailbuiltoverland.com/quiz.html"}]}</script>
 <script src="https://analytics.ahrefs.com/analytics.js" data-key="j9FlobP0cqeKUsyYo3HRlw" async></script>
 </head>
 <body>
@@ -280,14 +262,14 @@
     <div id="state-intro">
       <div class="section-tag">Personalized Recommendations</div>
       <h1>What's Your Overlanding Style?</h1>
-      <p>Answer 5 quick questions and get a gear list matched to your rig, terrain, and budget &mdash; plus a free weekly digest tailored to your vehicle type.</p>
+      <p>Answer five quick questions to receive a gear list matched to rig, terrain, and budget, plus a free weekly digest tailored to vehicle type.</p>
       <div class="hero-btns" style="margin-top:28px;">
         <button id="start-quiz-btn" class="btn btn-primary" style="font-size:1rem;padding:14px 32px;">Start the Quiz &rarr;</button>
         <span style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:0.85rem;">&#9201; Takes about 2 minutes</span>
       </div>
       <div class="hero-stats" style="margin-top:32px;">
         <div><div class="stat-val">5</div><div class="stat-lbl">Questions</div></div>
-        <div><div class="stat-val">4</div><div class="stat-lbl">Rig Types</div></div>
+        <div><div class="stat-val">4</div><div class="stat-lbl">Rig types</div></div>
         <div><div class="stat-val">16+</div><div class="stat-lbl">Gear Picks</div></div>
         <div><div class="stat-val">Free</div><div class="stat-lbl">Weekly Digest</div></div>
       </div>
@@ -351,7 +333,7 @@
       <div class="section-header" style="margin-bottom:24px;">
         <div>
           <div class="section-tag">Your Top Picks</div>
-          <h2 style="font-size:1.4rem;font-weight:800;margin-top:4px;">Recommended Gear for Your Rig</h2>
+          <h2 style="font-size:1.4rem;font-weight:800;margin-top:4px;">Recommended gear for selected rig</h2>
         </div>
         <a id="result-guide-link-2" href="build-guides.html" class="see-all">Full Build Guide &rarr;</a>
       </div>
@@ -364,7 +346,7 @@
             <div class="newsletter-text">
               <div class="section-tag">Free Gear Guide</div>
               <h2>Get Your Full Gear List</h2>
-              <p id="result-email-desc">We'll send your personalized gear list plus weekly overlanding tips matched to your rig.</p>
+              <p id="result-email-desc">Includes a personalized gear list and weekly overlanding tips matched to the selected rig.</p>
             </div>
             <div id="eo-quiz-widget">
               <form id="qz-email-form" onsubmit="handleQuizEmailSubmit(event)" novalidate>
@@ -416,10 +398,8 @@
     <div class="footer-grid">
       <div class="footer-brand">
         <div class="logo">Trail<span>Built</span></div>
-        <p>Honest, hands-on overlanding gear reviews and build guides since 2023.</p>
-        <div class="affiliate-notice">
-          <strong>Affiliate Disclosure:</strong> TrailBuilt earns commissions from qualifying Amazon purchases. This never affects our recommendations &mdash; we only link to gear we'd actually run on our own rigs.
-        </div>
+        <p>Research-based overlanding gear guides and build planning resources.</p>
+        <div class="affiliate-notice"><strong>Affiliate Disclosure:</strong> Trail Built may earn commissions from qualifying purchases. Affiliate relationships do not influence editorial coverage.</div>
       </div>
       <div class="footer-col">
         <h4>Reviews</h4>
@@ -468,7 +448,6 @@
 <script src="js/products-data.js"></script>
 <script src="js/amazon.js"></script>
 <script src="js/main.js"></script>
-<script src="js/price-history.js"></script>
 <script>
 // ── Trail Built Vehicle Quiz ──────────────────────────────────────────────────
 const QUIZ_KEY = "trailbuilt_vehicle_type";
@@ -523,10 +502,10 @@ const QUESTIONS = [
     question: "What's your gear budget per year?",
     subtitle: "We'll tailor recommendations to your spend level.",
     options: [
-      { value: "budget",    icon: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=80&q=80", label: "Under $500",    desc: "Best bang-for-buck picks" },
-      { value: "mid",       icon: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=80&q=80", label: "$500–$2,000",   desc: "Mid-range, proven gear" },
-      { value: "premium",   icon: "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=80&q=80", label: "$2,000–$5,000", desc: "Premium, long-lasting builds" },
-      { value: "unlimited", icon: "🚀", label: "$5,000+",       desc: "Expedition-grade, no compromises" },
+      { value: "budget",    icon: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=80&q=80", label: "Entry",          desc: "Streamlined planning choices" },
+      { value: "mid",       icon: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=80&q=80", label: "Mid-range",      desc: "Balanced planning choices" },
+      { value: "premium",   icon: "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=80&q=80", label: "Expanded",      desc: "Broader build planning" },
+      { value: "unlimited", icon: "🚀", label: "Complex build", desc: "Detailed component planning" },
     ]
   }
 ];
@@ -688,11 +667,8 @@ function renderQuestion() {
     <div class="qz-options">
       ${q.options.map(opt => `
         <button class="qz-option${selected === opt.value ? ' selected' : ''}" data-value="${opt.value}" type="button">
-          ${opt.icon.startsWith('http') ? `<img class="qz-option-icon-img" src="${opt.icon.includes('&h=') || opt.icon.includes('?h=') ? opt.icon : opt.icon + '&fit=crop&h=96'}" alt="${opt.label}" loading="lazy" width="48" height="48">` : `<span class="qz-option-icon">${opt.icon}</span>`}
-          <span>
-            <div class="qz-option-label">${opt.label}</div>
-            <div class="qz-option-desc">${opt.desc}</div>
-          </span>
+          ${opt.icon.startsWith('http') ? `<img class="qz-option-icon-img" src="${opt.icon.includes('&h=') || opt.icon.includes('?h=') ? opt.icon : opt.icon + '&fit=crop&h=96'}" alt="${opt.label}" loading="lazy" width="48" height="48">` : `<span class="qz-option-icon">Check current price</span>`}
+          <span>Check current price</span>
         </button>
       `).join("")}
     </div>
@@ -756,8 +732,8 @@ function showResult(vehicleType) {
         <img src="${p.img}" alt="${p.alt}" loading="lazy" />
       </div>
       <div class="card-body">
-        <div class="card-meta"><span class="badge">${p.tag}</span></div>
-        <h3 style="font-size:0.92rem;">${p.name}</h3>
+        <div class="card-meta"><span class="badge">Check current price</span></div>
+        <h3 style="font-size:0.92rem;">Research-based equipment planning</h3>
         <div class="qz-product-cta">Read review &rarr;</div>
       </div>
     </a>
