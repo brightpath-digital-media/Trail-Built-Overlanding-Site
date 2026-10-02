@@ -53,7 +53,7 @@ function sanitizeFile(filePath) {
   const descPattern = /(<meta\s+name="description"\s+content=")([^"]{1,99})(")/g;
   content = content.replace(descPattern, (match, open, desc, close) => {
     if (desc.length < 100) {
-      const padded = (desc + ` Compare published specifications, fitment, availability, and warranty information for overlanding build planning in 2026.`).substring(0, 155);
+      const padded = (desc + ` Find published specifications, fitment, availability, and warranty information for overlanding build planning in 2026.`).substring(0, 155);
       fixes.push(`Padded short meta description from ${desc.length} to ${padded.length} chars`);
       changed = true;
       return `${open}${padded}${close}`;

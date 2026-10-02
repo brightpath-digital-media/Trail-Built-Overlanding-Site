@@ -18,9 +18,26 @@ try {
   assert.notStrictEqual(violation.status, 0, 'seeded first-person testing claim must block');
   assert.match(violation.stderr, /(?:tested-language|first-person-physical-use)/, 'failure must name a blocking research-claims rule');
 
-  fs.writeFileSync(page, '<!doctype html><p>Research-based comparisons organize published specifications and fitment details.</p>\n');
+  const seededViolations = [
+    ['numeric-mileage', 'The route covered 3,200+ miles of desert travel.'],
+    ['measured-claim', 'We measured current draw during a weekend trip.'],
+    ['evaluation-claim', 'The evaluation averaged 2.8 amps.'],
+    ['real-world-use-claim', 'Real-world testing showed stable output.'],
+    ['on-trail-physical-use', 'We installed the kit on the trail.'],
+    ['test-mule-claim', 'The Tacoma served as a test mule.'],
+    ['we-found-claim', 'We found that the product ran quietly.'],
+    ['after-testing-claim', 'After rigorous testing, this is the winner.'],
+  ];
+  for (const [rule, text] of seededViolations) {
+    fs.writeFileSync(page, `<!doctype html><p>${text}</p>\n`);
+    const seeded = spawnSync(process.execPath, [linter, '--root', fixture], { encoding: 'utf8' });
+    assert.notStrictEqual(seeded.status, 0, `${rule} must block`);
+    assert.match(seeded.stderr, new RegExp(`\\[${rule}\\]`), `${rule} must identify itself`);
+  }
+
+  fs.writeFileSync(page, '<!doctype html><p>Manufacturer-listed capacity is 1,002 Wh; consult the published specification and fitment documentation before purchase.</p>\n');
   const clean = spawnSync(process.execPath, [linter, '--root', fixture], { encoding: 'utf8' });
-  assert.strictEqual(clean.status, 0, clean.stderr || clean.stdout);
+  assert.strictEqual(clean.status, 0, `legitimate manufacturer-listed specification must pass: ${clean.stderr || clean.stdout}`);
   console.log('Research-claims linter regression test passed.');
 } finally {
   fs.rmSync(fixture, { recursive: true, force: true });
