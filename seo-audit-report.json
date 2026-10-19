@@ -1,10 +1,10 @@
 {
-  "generated": "2026-10-18T00:40:16.814Z",
+  "generated": "2026-10-19T20:40:47.004Z",
   "summary": {
-    "pages": 42,
+    "pages": 43,
     "issues": 0,
     "warnings": 7,
-    "passed": 450
+    "passed": 461
   },
   "issues": [],
   "warnings": [
@@ -217,6 +217,17 @@
     "[/articles/best-overlanding-camp-chairs-and-tables.html] All 10 Amazon links have affiliate tag",
     "[/articles/best-overlanding-camp-chairs-and-tables.html] No placeholder href='#' links",
     "[/articles/best-overlanding-camp-chairs-and-tables.html] JSON-LD structured data present",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] Title OK (52 chars)",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] Meta description OK (152 chars)",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] Canonical URL present and correct",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] og:title present",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] og:description present",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] og:image present",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] robots meta present",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] Single H1 tag",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] All 10 Amazon links have affiliate tag",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] No placeholder href='#' links",
+    "[/articles/best-overlanding-cb-radios-and-communication.html] JSON-LD structured data present",
     "[/articles/best-overlanding-first-aid-kit-essentials.html] Title OK (59 chars)",
     "[/articles/best-overlanding-first-aid-kit-essentials.html] Meta description OK (86 chars)",
     "[/articles/best-overlanding-first-aid-kit-essentials.html] Canonical URL present and correct",
@@ -468,7 +479,7 @@
     "[/articles/toyota-tacoma-overland-build-guide.html] No placeholder href='#' links",
     "[/articles/toyota-tacoma-overland-build-guide.html] JSON-LD structured data present",
     "robots.txt references sitemap",
-    "sitemap.xml has 40 URLs with correct domain"
+    "sitemap.xml has 41 URLs with correct domain"
   ],
   "pages": [
     {
@@ -820,6 +831,25 @@
       "passed": [
         "Title OK (64 chars)",
         "Meta description OK (149 chars)",
+        "Canonical URL present and correct",
+        "og:title present",
+        "og:description present",
+        "og:image present",
+        "robots meta present",
+        "Single H1 tag",
+        "All 10 Amazon links have affiliate tag",
+        "No placeholder href='#' links",
+        "JSON-LD structured data present"
+      ]
+    },
+    {
+      "url": "/articles/best-overlanding-cb-radios-and-communication.html",
+      "type": "article",
+      "issues": [],
+      "warnings": [],
+      "passed": [
+        "Title OK (52 chars)",
+        "Meta description OK (152 chars)",
         "Canonical URL present and correct",
         "og:title present",
         "og:description present",
