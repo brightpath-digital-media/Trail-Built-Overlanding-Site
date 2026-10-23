@@ -91,6 +91,32 @@ nav a:hover, nav a.active {
 }
 .header-cta:hover { background: var(--accent-action-hover) !important; color: #fff !important; }
 
+/* Skip link: visually hidden until keyboard focus, then pinned top-left above the sticky header */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 16px;
+  z-index: 1000;
+  padding: 12px 20px;
+  background: var(--accent-action);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  outline: 3px solid var(--text);
+  outline-offset: 0;
+  transform: translateY(-120%);
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+/* The skip link target is focused programmatically; it is not an interactive control */
+main:focus { outline: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .skip-link { transition: transform 0.15s ease-out; }
+}
+
 /* Mobile menu toggle */
 .menu-toggle { display: none; background: none; border: none; color: var(--text); cursor: pointer; padding: 8px; }
 
