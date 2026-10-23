@@ -150,6 +150,157 @@
   from   = "/sitemap.xml"
   to     = "/sitemap.xml"
   status = 200
+
+# ── Internal files: answer 404 on the live site ───────────────────────────────
+# The site publishes ".", so every tracked file is otherwise served. These are
+# build/ops/editorial files read from disk by scripts and workflows (never fetched
+# over HTTP by pages), so hiding them does not affect the build. force = true makes
+# the rule win over the existing static file. There is no /404.html in the repo, so
+# Netlify serves its default 404 page body with the 404 status.
+# Exact files first, then directory globs.
+[[redirects]]
+  from   = "/SETUP.md"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/CONTENT_RULES.md"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/AFFILIATE_AUTOMATION.md"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/product_research.md"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/asin_healthcheck_report.json"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/price-sync-report.json"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/seo-audit-report.json"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/seo-audit-report.md"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/requirements.txt"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/netlify.toml"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.daily-rebuild-ping"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.gitignore"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.gitattributes"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.DS_Store"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/scripts/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/tools/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.github/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/.githooks/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/docs/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/reports/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/templates/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/data/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/newsletters/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
+
+[[redirects]]
+  from   = "/email-templates/*"
+  to     = "/404.html"
+  status = 404
+  force  = true
 # ── Admin panel: noindex + no-cache ──────────────────────────────────────────
 [[headers]]
   for = "/admin/*"
