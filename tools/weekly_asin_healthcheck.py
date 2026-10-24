@@ -24,7 +24,8 @@ Usage:
   python3 tools/weekly_asin_healthcheck.py --dry-run
   python3 tools/weekly_asin_healthcheck.py --sync-price-images
 
-Report recipient: kamilano1@gmail.com
+Report recipient: read from the AFFILIATE_REPORT_RECIPIENT environment variable (no default;
+the email step is skipped with a log line when it is unset). It is never written to the report.
 """
 
 from __future__ import annotations
@@ -40,10 +41,16 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deploy_confirmation_remediation import SITES as DEPLOY_SITES, concise_email, reconcile_all, remediate_product_finding
+from deploy_confirmation_remediation import (
+    REPORT_RECIPIENT_ENV,
+    SITES as DEPLOY_SITES,
+    concise_email,
+    email_skip_reason,
+    reconcile_all,
+    remediate_product_finding,
+)
 from urllib.parse import parse_qs, urlparse
 
-REPORT_RECIPIENT = "kamilano1@gmail.com"
 REQUEST_DELAY_SECONDS = 1.25
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPORT_PATH = REPO_ROOT / "affiliate_healthcheck_report.json"
@@ -528,7 +535,7 @@ def _plain_report(site_reports: list[dict], context_mapping: dict, sync_reports:
         "- Amazon bot-check/rate-limit responses are reported as inconclusive, not as delistings.",
         "- Set CREATORS_API_CLIENT_ID, CREATORS_API_CLIENT_SECRET, and the per-site",
         "  CREATORS_API_PARTNER_TAG to use Amazon's official Creators API rather than scrape fallback.",
-        f"- Report recipient: {REPORT_RECIPIENT}",
+        f"- Report recipient: set via the {REPORT_RECIPIENT_ENV} environment variable (not stored in this report).",
     ])
     return "\n".join(lines)
 
@@ -541,7 +548,11 @@ def main() -> int:
 
     run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     print(f"Canonical Weekly Affiliate Link Health-Check — {run_date}")
-    print(f"Report recipient: {REPORT_RECIPIENT}")
+    skip_reason = email_skip_reason()
+    if skip_reason:
+        print(skip_reason)
+    else:
+        print(f"Report recipient: configured via {REPORT_RECIPIENT_ENV}")
     print("Source of truth: Amazon Creators API GetItems with public-page fallback")
 
     site_reports = [validate_site(site) for site in SITES]
@@ -572,7 +583,6 @@ def main() -> int:
     plain = _plain_report(site_reports, context_mapping, sync_reports, remediation_actions, deploy_reconciliation, run_date)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "recipient": REPORT_RECIPIENT,
         "canonical_job": "Weekly Affiliate Link Health-Check",
         "validation_scope": "product-to-ASIN-to-affiliate-link-to-Amazon-title",
         "sites": site_reports,
@@ -580,7 +590,11 @@ def main() -> int:
         "catalog_sync": sync_reports,
         "strict_remediation_actions": remediation_actions,
         "deploy_confirmation": deploy_reconciliation,
-        "deploy_confirmation_email": {"to": REPORT_RECIPIENT, "subject": deploy_subject, "body": deploy_body},
+        "deploy_confirmation_email": (
+            {"skipped": True, "reason": skip_reason}
+            if skip_reason
+            else {"recipient_env": REPORT_RECIPIENT_ENV, "subject": deploy_subject, "body": deploy_body}
+        ),
         "summary": {
             "total_products": sum(report["total"] for report in site_reports),
             "passed": sum(report["passed"] for report in site_reports),
