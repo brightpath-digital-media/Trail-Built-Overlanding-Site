@@ -66,7 +66,7 @@ Every Monday at 8:00 AM PT, an automated health-check runs across:
 - silkierstrands.com
 - pauseandflourish.com
 
-It re-validates every ASIN for delistings, title changes, and mismatches, and emails a report to **kamilano1@gmail.com**. If you receive a health-check email with failures, fix them before the next publish cycle.
+It re-validates every ASIN for delistings, title changes, and mismatches, and emails a report to **the owner (address kept out of the repo; set in the environment)**. If you receive a health-check email with failures, fix them before the next publish cycle.
 
 ---
 

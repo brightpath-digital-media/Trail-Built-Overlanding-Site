@@ -10,7 +10,7 @@ This document defines the single approved automation path for affiliate product 
 |---|---|
 | Job name | **Weekly Affiliate Link Health-Check** |
 | Cadence | Every Monday at **15:00 Pacific Time** |
-| Report recipient | `kamilano1@gmail.com` |
+| Report recipient | The owner (address kept out of the repo; set in the environment) |
 | Product source of truth | Amazon **Creators API** `GetItems` |
 | Fallback | Public Amazon product-page check when Creators API credentials are not available |
 | Script | `tools/weekly_asin_healthcheck.py` in the Trail Built Overland repository |
@@ -75,10 +75,10 @@ The same shared engine covers two non-duplicative invocation paths:
 | Agent-initiated push | `python3 tools/deploy_confirmation_remediation.py --mode post-push --site <site> --expected-sha <sha> --auto-remediate` | Waits for the expected `version.txt` commit, produces the concise deploy-confirmation email draft, and applies only approved safe remediation. |
 | Canonical weekly job | `weekly_asin_healthcheck.py` calls `reconcile_all(auto_remediate=True, dry_run=args.dry_run)` from `deploy_confirmation_remediation.py` | Reconciles every live `version.txt` marker to `origin/main`; this catches manual or third-party deploy outcomes without a second schedule. |
 
-The post-push flow sends the engine-generated concise email draft to `kamilano1@gmail.com` through the existing authorized Gmail reporting path. The weekly task includes the same reconciliation in its report and sends the weekly email through that same reporting path. No GitHub Actions credentials, Netlify tokens, Amazon credentials, or email secrets are committed.
+The post-push flow sends the engine-generated concise email draft to the owner (address kept out of the repo; set in the environment) through the existing authorized Gmail reporting path. The weekly task includes the same reconciliation in its report and sends the weekly email through that same reporting path. No GitHub Actions credentials, Netlify tokens, Amazon credentials, or email secrets are committed.
 
 ### Strict auto-remediation policy
 
 The engine never weakens a gate, lowers a threshold, changes credentials, spends money, or manufactures data. It caps approved automatic remediation at **two attempts**. Approved actions are limited to committing a locally present referenced module; unlinking an exact confirmed dead/unavailable ASIN; rerunning the safe Creators API catalog sync to null an offer price with no current offer or reserialize product data; and verified display-label corrections after a full official catalog identity match. Ambiguous SKU swaps, threshold/gate changes, unavailable credentials, recurring failures, and all unverifiable claims are escalated with the exact log excerpt and recommended next action.
 
-The engine path is `tools/deploy_confirmation_remediation.py`. Its JSON output always includes an `email_draft` addressed to `kamilano1@gmail.com`, expected commit, live marker, green/blocked state, automatic actions, and escalation status.
+The engine path is `tools/deploy_confirmation_remediation.py`. Its JSON output always includes an `email_draft` for the owner (address kept out of the repo; set in the environment), expected commit, live marker, green/blocked state, automatic actions, and escalation status.
