@@ -11,7 +11,7 @@
   #   CREATORS_API_CLIENT_SECRET           → Amazon Creators API client secret
   #   CREATORS_API_PARTNER_TAG             → affiliate tag (default: trailbuiltove-20)
   #   Credentials: https://affiliate-program.amazon.com/creatorsapi
-  command = "python3 -m pip install --disable-pip-version-check --no-cache-dir -r requirements.txt && python3 scripts/consolidate-portable-power-guides.py && python3 scripts/ensure_main_landmarks.py && node scripts/generate-sitemap.mjs && node scripts/sync-homepage-latest.js && python3 scripts/normalize-static-seo.py && node scripts/validate-editorial-images.js && python3 scripts/validate-guide-commerce.py && python3 scripts/sync-guide-catalog.py && python3 scripts/normalize-article-chrome.py --check && node scripts/validate-research-claims.mjs && if [ -n \"$CREATORS_API_CLIENT_ID\" ] && [ -n \"$CREATORS_API_CLIENT_SECRET\" ] && [ -n \"$CREATORS_API_PARTNER_TAG\" ]; then node scripts/fetch-prices.js; else echo 'Creators API credentials unavailable; browser layer will hide stale catalog data.'; fi && python3 tools/validate_asins.py && python3 tools/validate_asin_mappings.py --output /tmp/asin_mapping_report.json && python3 tools/validate_rendered_amazon_anchors.py && node scripts/validate-image-coverage.mjs --dir . && echo ${COMMIT_REF:-local} > version.txt"
+  command = "python3 -m pip install --disable-pip-version-check --no-cache-dir -r requirements.txt && python3 scripts/consolidate-portable-power-guides.py && python3 scripts/ensure_main_landmarks.py && node scripts/generate-sitemap.mjs && node scripts/sync-homepage-latest.js && python3 scripts/normalize-static-seo.py && node scripts/validate-editorial-images.js && python3 scripts/validate-guide-commerce.py && python3 scripts/sync-guide-catalog.py && python3 scripts/normalize-article-chrome.py --check && node scripts/validate-research-claims.mjs && if [ -n \"$CREATORS_API_CLIENT_ID\" ] && [ -n \"$CREATORS_API_CLIENT_SECRET\" ] && [ -n \"$CREATORS_API_PARTNER_TAG\" ]; then node scripts/fetch-prices.js; else echo 'Creators API credentials unavailable; browser layer will hide stale catalog data.'; fi && python3 tools/validate_asins.py && python3 tools/validate_asin_mappings.py --output /tmp/asin_mapping_report.json && python3 tools/validate_rendered_amazon_anchors.py && node scripts/validate-image-coverage.mjs --dir . && echo ${COMMIT_REF:-local} > version.txt && rm -rf scripts tools docs reports templates data newsletters email-templates SETUP.md CONTENT_RULES.md AFFILIATE_AUTOMATION.md product_research.md asin_healthcheck_report.json price-sync-report.json seo-audit-report.json seo-audit-report.md requirements.txt"
   publish = "."
   functions = "netlify/functions"
 
@@ -158,6 +158,12 @@
 # the rule win over the existing static file. There is no /404.html in the repo, so
 # Netlify serves its default 404 page body with the 404 status.
 # Exact files first, then directory globs.
+# NOTE: redirect rules are case-sensitive but Netlify static serving is not, so
+# /Scripts/x.js would still reach the file. The real removal is the last step of
+# the build command above (rm -rf of these paths, after every script that reads them
+# has run): the deployed site simply does not contain them. netlify/functions and
+# netlify/edge-functions must stay for the bundler, so those two only have the
+# lowercase 404 rules (their sources hold env var NAMES only, no secrets).
 [[redirects]]
   from   = "/SETUP.md"
   to     = "/404.html"
