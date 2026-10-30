@@ -20,7 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createAsinVerifier, getCreatorsCredentials, maskSecrets } = require('./asin-verification');
+const { createAsinVerifier, getCreatorsCredentials, maskSecrets, safeCode } = require('./asin-verification');
 
 const POOL_FILE = path.join(__dirname, '..', 'data', 'verified-products.json');
 const STATES = ['ELIGIBLE', 'NOT_ELIGIBLE', 'CREDENTIAL_ERROR', 'THROTTLED', 'UNKNOWN'];
@@ -33,14 +33,13 @@ function classifyLookup(result) {
   if (/associatenoteligible|notelig/.test(code) || (status === 403 && /not (currently )?eligible|eligibility requirement/i.test(reason))) {
     return 'NOT_ELIGIBLE';
   }
-  if (
-    result?.stage === 'auth'
-    || status === 401
-    || /invalidsignature|invalidpartnertag|invalid_client|invalidclient|unauthorized|unrecognizedclient|invalidaccesskey|incompletesignature|missingcredentials|invalid_scope|access_denied/.test(code)
-  ) {
-    return 'CREDENTIAL_ERROR';
-  }
+  const credentialCode = /invalidsignature|invalidpartnertag|invalid_client|invalidclient|unauthorized|unrecognizedclient|invalidaccesskey|incompletesignature|missingcredentials|invalid_scope|access_denied/.test(code);
+  // A token-exchange failure is a credential problem only when the endpoint rejected the
+  // request (400/401/403) or named a credential error; throttling, 5xx and transport
+  // failures during the exchange are not.
+  const authRejected = result?.stage === 'auth' && [400, 401, 403].includes(status);
   if (status === 429 || /toomanyrequests|throttl/.test(code) || /throttled/i.test(reason)) return 'THROTTLED';
+  if (authRejected || status === 401 || credentialCode) return 'CREDENTIAL_ERROR';
   return 'UNKNOWN';
 }
 
@@ -58,7 +57,7 @@ async function runProbe({ verifier, products, credentials = {}, now = () => Date
   return {
     state,
     http_status: Number(result.http_status || (result.status === 'LIVE' ? 200 : 0)),
-    error_code: String(result.error_code || ''),
+    error_code: safeCode(result.error_code, credentials),
     message: result.status === 'LIVE' ? '' : maskSecrets(result.reason || '', credentials).slice(0, 200),
     asin,
     checked_at: new Date(now()).toISOString(),

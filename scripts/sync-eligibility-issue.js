@@ -60,6 +60,7 @@ function renderComment(previousState, result) {
 async function api(method, route, body, { token, repo }) {
   const response = await fetch(`https://api.github.com/repos/${repo}${route}`, {
     method,
+    signal: AbortSignal.timeout(20000),
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -68,12 +69,15 @@ async function api(method, route, body, { token, repo }) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
   if (!response.ok && !(method === 'POST' && route === '/labels' && response.status === 422)) {
     throw new Error(`GitHub ${method} ${route} failed: HTTP ${response.status}`);
   }
-  return data;
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
 }
 
 async function sync(result, ctx) {
@@ -86,9 +90,11 @@ async function sync(result, ctx) {
     return { action: 'created', number: created.number, commented: false };
   }
   const previousState = parsePreviousState(existing.body);
-  await api('PATCH', `/issues/${existing.number}`, { body, state: 'open' }, ctx);
   const commented = shouldComment(previousState, result.state);
+  // Comment first: if it fails, the stored state marker is still the old one and the next run retries.
   if (commented) await api('POST', `/issues/${existing.number}/comments`, { body: renderComment(previousState, result) }, ctx);
+  // A closed issue is reopened only when the state actually changed.
+  await api('PATCH', `/issues/${existing.number}`, commented ? { body, state: 'open' } : { body }, ctx);
   return { action: 'updated', number: existing.number, commented };
 }
 

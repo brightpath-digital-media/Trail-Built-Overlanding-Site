@@ -119,6 +119,7 @@ jobs:
         id: eligibility_probe
         if: steps.check_published.outputs.skip != 'true'
         continue-on-error: true
+        timeout-minutes: 3
         env:
           CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
           CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}

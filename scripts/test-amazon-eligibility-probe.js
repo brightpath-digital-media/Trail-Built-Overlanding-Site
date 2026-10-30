@@ -115,6 +115,72 @@ async function run() {
     global.fetch = originalFetch;
   }
 
+  // Hostile responses: a credential-shaped value in any code field must never survive.
+  const token40 = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd';
+  for (const hostile of [
+    { reason: CREDENTIALS.clientSecret },
+    { errors: [{ code: CREDENTIALS.clientId }] },
+    { __type: `com.amazon#${CREDENTIALS.clientSecret}` },
+    { reason: token40 },
+    { code: `${CREDENTIALS.partnerTag}` },
+    { type: 'x'.repeat(200) },
+  ]) {
+    const r = await probeWith({ status: 403, body: JSON.stringify(hostile) });
+    const published = JSON.stringify(r) + issue.renderBody(r) + issue.renderComment('ELIGIBLE', r);
+    for (const secret of [CREDENTIALS.clientSecret, CREDENTIALS.clientId, CREDENTIALS.partnerTag, token40]) {
+      assert.ok(!published.includes(secret), `a secret leaked through the error code for ${JSON.stringify(hostile).slice(0, 40)}`);
+    }
+    assert.strictEqual(r.error_code, '', 'a credential-shaped code is dropped, not shown');
+  }
+  assert.strictEqual((await probeWith({ status: 403, body: JSON.stringify({ reason: 'AccessDeniedException' }) })).error_code, 'AccessDeniedException', 'a normal code is kept');
+
+  // Token-exchange failures: rejected is a credential problem; throttle, 5xx and transport are not.
+  assert.strictEqual((await probeWith({ status: 200, body: '{}' }, { status: 429, body: '{}' })).state, 'THROTTLED');
+  assert.strictEqual((await probeWith({ status: 200, body: '{}' }, { status: 500, body: 'oops' })).state, 'UNKNOWN');
+  assert.strictEqual((await probeWith({ status: 200, body: '{}' }, { status: 503, body: '' })).state, 'UNKNOWN');
+  assert.strictEqual((await probeWith({ status: 200, body: '{}' }, { status: 400, body: JSON.stringify({ error: 'invalid_client' }) })).state, 'CREDENTIAL_ERROR');
+  const transportVerifier = createAsinVerifier({
+    credentials: CREDENTIALS, requestIntervalMs: 0, lookupAttempts: 1, sleepFn: async () => {},
+    request: async () => { throw new Error('socket hang up'); },
+  });
+  const transport = await runProbe({ verifier: transportVerifier, products: PRODUCTS, credentials: CREDENTIALS, now: () => 0 });
+  assert.strictEqual(transport.state, 'UNKNOWN', 'a transport failure is not a credential error');
+
+  // Issue sync ordering and reopen rules.
+  const log = [];
+  let failComment = false;
+  const store = [{ number: 9, title: issue.TITLE, state: 'closed', body: issue.renderBody({ ...notEligible, state: 'NOT_ELIGIBLE' }) }];
+  global.fetch = async (url, options) => {
+    const route = String(url).replace('https://api.github.com/repos/o/r', '').split('?')[0];
+    log.push(`${options.method} ${route}${options.body && JSON.parse(options.body).state ? ' state=' + JSON.parse(options.body).state : ''}`);
+    if (route === '/labels') return new Response('{}', { status: 201 });
+    if (options.method === 'GET') return new Response(JSON.stringify(store), { status: 200 });
+    if (route.endsWith('/comments')) return failComment ? new Response('<html>bad gateway</html>', { status: 502 }) : new Response('{}', { status: 201 });
+    if (options.method === 'PATCH') { store[0].body = JSON.parse(options.body).body; return new Response('{}', { status: 200 }); }
+    throw new Error('unexpected');
+  };
+  try {
+    const ctx = { token: 't', repo: 'o/r' };
+    // Same state on a deliberately closed issue: body refreshed, issue stays closed, no comment.
+    await issue.sync(notEligible, ctx);
+    assert.ok(!log.some(l => l.includes('state=open')), 'a closed issue is not reopened when the state is unchanged');
+    assert.ok(!log.some(l => l.endsWith('/comments')), 'no comment when unchanged');
+    // State change with a failing comment POST: the stored marker must still be the old state.
+    failComment = true;
+    log.length = 0;
+    await assert.rejects(() => issue.sync(eligible, ctx), /failed: HTTP 502/, 'a non-JSON error body still reports the HTTP status');
+    assert.strictEqual(issue.parsePreviousState(store[0].body), 'NOT_ELIGIBLE', 'marker unchanged so the next run retries the comment');
+    assert.ok(!log.some(l => l.startsWith('PATCH')), 'no PATCH before the comment succeeded');
+    // Retry succeeds: comment, then reopen and update.
+    failComment = false;
+    log.length = 0;
+    await issue.sync(eligible, ctx);
+    assert.ok(log.findIndex(l => l.endsWith('/comments')) < log.findIndex(l => l.startsWith('PATCH')), 'comment is posted before the PATCH');
+    assert.ok(log.some(l => l.includes('state=open')), 'a real state change reopens the issue');
+  } finally {
+    global.fetch = originalFetch;
+  }
+
   console.log('Eligibility probe tests passed: classification, masking, issue body, comment-on-change.');
 }
 

@@ -65,13 +65,31 @@ function parseJson(raw) {
 
 const MAX_DETAIL_CHARS = 200;
 
+const CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{2,39}$/;
+
+/**
+ * An error code is published, so it must look like an identifier and must not contain
+ * (or be) a credential. Anything else is dropped rather than shown.
+ */
+function safeCode(raw, credentials = {}) {
+  const cleaned = String(raw ?? '').split('#').pop().replace(/[^A-Za-z0-9_.:-]/g, '');
+  if (!CODE_PATTERN.test(cleaned)) return '';
+  return maskSecrets(cleaned, credentials) === cleaned ? cleaned : '';
+}
+
 /** First API error code in a response body (never credential material). */
-function apiErrorCode(payload) {
+function apiErrorCode(payload, credentials = {}) {
   const body = payload && typeof payload === 'object' ? payload : {};
   const firstError = Array.isArray(body.errors) ? body.errors[0] : null;
-  const raw = firstError?.reason || firstError?.code || firstError?.type
-    || body.reason || body.code || body.error || body.__type || body.type || '';
-  return String(raw).split('#').pop().replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 64);
+  const candidates = [
+    firstError?.reason, firstError?.code, firstError?.type,
+    body.reason, body.code, body.error, body.__type, body.type,
+  ];
+  for (const candidate of candidates) {
+    const code = safeCode(candidate, credentials);
+    if (code) return code;
+  }
+  return '';
 }
 
 /** Replace anything credential-shaped before a message is logged or published. */
@@ -95,9 +113,9 @@ function apiMessage(payload, credentials) {
   return maskSecrets(raw, credentials).slice(0, MAX_DETAIL_CHARS);
 }
 
-function apiReason(response) {
+function apiReason(response, credentials = {}) {
   const body = parseJson(response.body);
-  return apiErrorCode(body) || `HTTP ${response.status}`;
+  return apiErrorCode(body, credentials) || `HTTP ${response.status}`;
 }
 
 function createAsinVerifier({
@@ -125,8 +143,8 @@ function createAsinVerifier({
     const cacheToken = (response, generation) => {
       const payload = parseJson(response.body);
       if (response.status < 200 || response.status >= 300 || !payload.access_token) {
-        const error = new Error(`${generation} token exchange failed: ${apiReason(response)}`);
-        error.code = apiErrorCode(payload);
+        const error = new Error(`${generation} token exchange failed: ${apiReason(response, credentials)}`);
+        error.code = apiErrorCode(payload, credentials);
         error.http_status = response.status;
         error.stage = 'auth';
         throw error;
@@ -212,7 +230,7 @@ function createAsinVerifier({
       };
     }
     const ok = response.status >= 200 && response.status < 300;
-    const code = apiErrorCode(payload);
+    const code = apiErrorCode(payload, credentials);
     const detail = apiMessage(payload, credentials);
     let reason;
     if (response.status === 429) reason = 'Creators API throttled the lookup';
@@ -250,7 +268,7 @@ function createAsinVerifier({
           image_url: '',
           stage: error.stage || '',
           http_status: error.http_status || 0,
-          error_code: String(error.code || '').replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 64),
+          error_code: safeCode(error.code, credentials),
           reason: `Creators API request failed: ${maskSecrets(error.message, credentials).slice(0, MAX_DETAIL_CHARS)}`,
         };
       }
@@ -268,6 +286,7 @@ function createAsinVerifier({
 module.exports = {
   apiErrorCode,
   createAsinVerifier,
+  safeCode,
   maskSecrets,
   getCreatorsCredentials,
   requestHttps,
