@@ -1,0 +1,51 @@
+name: Rotate Homepage Editor's Pick
+
+# Weekly rotation of the homepage Editor's Pick (PM->CODE #57 item 2). Runs Monday
+# 21:00 UTC (2:00 PM PT), after the Manus authoring task (~7:00 AM PT) and both
+# weekly-content fallback runs, so a new article landed that day is already in the
+# newest four, and a week with no new article still rotates. Idempotent: a second run
+# in the same Monday-to-Sunday week changes nothing. See scripts/rotate-featured.js.
+
+on:
+  schedule:
+    - cron: '0 21 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rotate-editors-pick
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    name: Rotate the Editor's Pick
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Run rotation tests
+        run: node scripts/test-rotate-featured.js
+
+      - name: Rotate the Editor's Pick
+        run: node scripts/rotate-featured.js
+
+      - name: Commit and push when the pick changed
+        run: |
+          git config user.name  "Trail Built Bot"
+          git config user.email "bot@trailbuiltoverland.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo "Editor's Pick unchanged — nothing to commit."
+          else
+            git commit -m "chore: rotate homepage Editor's Pick (week of $(date -u -d 'last monday' +%Y-%m-%d))"
+            git pull --rebase origin main
+            git push origin main
+          fi
