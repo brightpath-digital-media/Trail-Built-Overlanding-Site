@@ -264,6 +264,15 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing to commit — article may already exist."
           else
+            # Keep real Tier 1 evidence (last_verified_at etc.) for the next run. The pool
+            # file is staged only together with an article, and only when this run had at
+            # least one LIVE lookup; the commit message below is unchanged. A persist
+            # failure never blocks the publish.
+            PERSIST_OUT=$(node scripts/build-verified-pool.mjs --persist 2>&1) || PERSIST_OUT="persist=0 (persist step failed)"
+            echo "$PERSIST_OUT"
+            if [ "$(echo "$PERSIST_OUT" | tail -n 1)" = "persist=1" ]; then
+              git add data/verified-products.json
+            fi
             ARTICLE=$(ls -t articles/*.html | head -1 | xargs basename)
             git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)"
             echo "ARTICLE_SLUG=${ARTICLE}" >> $GITHUB_ENV
