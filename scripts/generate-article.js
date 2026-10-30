@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createAsinVerifier } = require('./asin-verification');
 const { classifyRunReport, otherFailuresAccounted, readRunReport } = require('./lookup-outage');
+const { assertNoPriceClaims, describeClaims, findPriceClaims } = require('./no-price-claims');
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSOCIATE_TAG  = process.env.AMAZON_ASSOCIATE_TAG || 'trailbuiltove-20';
@@ -639,7 +640,7 @@ function canonicalProductBox(box, product, imageLocalPath) {
     .slice(0, 3);
   const reasons = listItems.length >= 2
     ? listItems
-    : [`${product.name} is selected from the runtime-verified product pool.`, 'Published dimensions, fitment, and feature details support comparison for vehicle-based travel and camp use.'];
+    : [`${product.name} is drawn from the approved Trail Built product pool.`, 'Published dimensions, fitment, and feature details support comparison for vehicle-based travel and camp use.'];
   const asin = product.asin;
   const alt = `${product.name} overlanding gear`;
   const amazonUrl = `https://www.amazon.com/dp/${asin}?tag=${ASSOCIATE_TAG}`;
@@ -751,7 +752,7 @@ function buildCommerceSchemas({ title, articleUrl, bodyHTML, products }) {
 }
 
 function buildComparisonTable(products) {
-  return `<section class="guide-comparison" data-guide-generated="true"><div class="guide-comparison-header"><h2>Compare the Top Picks</h2><p class="guide-comparison-note">Review each product section for current Amazon availability and offer details.</p></div><div class="guide-table-wrap"><table class="guide-comparison-table"><thead><tr><th>Product</th><th>Key details</th><th>Guide section</th></tr></thead><tbody>${products.map(product => `<tr><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.summary)}</td><td><a href="#top-picks">See pick</a></td></tr>`).join('')}</tbody></table></div></section>`;
+  return `<section class="guide-comparison" data-guide-generated="true"><div class="guide-comparison-header"><h2>Compare the Top Picks</h2><p class="guide-comparison-note">Open any pick on Amazon for current details before you buy.</p></div><div class="guide-table-wrap"><table class="guide-comparison-table"><thead><tr><th>Product</th><th>Key details</th><th>Guide section</th></tr></thead><tbody>${products.map(product => `<tr><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.summary)}</td><td><a href="#top-picks">See pick</a></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
 function loadArticleFooter() {
@@ -981,7 +982,7 @@ async function generateArticleContent(topic, pool = loadVerifiedPool(), excluded
     : `The approved pool has only ${relevantProducts.length} relevant product(s), so do not generate this article: its topic does not have the ${MIN_PRODUCT_BOXES} qualified products required by the publish quality gate.`;
 
   const systemPrompt = `You are an expert overlanding writer for TrailBuiltOverland.com, a research-based affiliate review site.
-Write in a clear, practical, third-person editorial voice. Do not claim that Trail Built or any writer conducted product trials, drove, owned, bought, used, or ran a product. Do not invent sources, statistics, quotes, prices, warranties, or performance results. Frame comparisons around published manufacturer specifications, verified owner reviews, long-term owner reports, and independent data only where the supplied source material supports it.
+Write in a clear, practical, third-person editorial voice. Do not claim that Trail Built or any writer conducted product trials, drove, owned, bought, used, or ran a product. Do not invent sources, statistics, quotes, warranties, or performance results. Frame comparisons around published manufacturer specifications and independent data only where the supplied source material supports it. NO-PRICE MODE: never state or imply a price, cost figure, discount, sale, stock or availability status, star rating, rating score, review count, or customer review. Do not write dollar amounts or the words price, pricing, in stock, availability, discount, sale, rating score, or reviews; readers are sent to Amazon for current details.
 Every article must include:
 - A compelling intro paragraph
 - ${productCountInstruction}
@@ -992,12 +993,12 @@ Every article must include:
 - An affiliate disclosure reminder in the footer note
 Write clean HTML fragments only (no <html>/<head>/<body> tags).
 Use <h2>, <h3>, <p>, <ul>, <li>, <strong> tags only outside of product boxes.
-For each included product recommendation, wrap in a <div class="product-box" data-product="PRODUCT NAME" data-asin="ASIN"> containing an <h4>, one descriptive <p>, a <ul> with 2–3 <li> points, and the direct tagged Amazon product link. Do NOT emit <img>, prices, image wrappers, product metadata spans, emoji, or any other product-card presentation markup: the generator supplies the site-standard local-image product card after validation.`;
+For each included product recommendation, wrap in a <div class="product-box" data-product="PRODUCT NAME" data-asin="ASIN"> containing an <h4>, one descriptive <p>, a <ul> with 2–3 <li> points, and the direct tagged Amazon product link. Do NOT emit <img>, price or stock text, image wrappers, product metadata spans, emoji, or any other product-card presentation markup: the generator supplies the site-standard local-image product card after validation.`;
 
   const userPrompt = `Write a comprehensive research-based buyer's guide titled "Best ${topic.charAt(0).toUpperCase() + topic.slice(1)} 2026".
 ${productCountInstruction}
-Make it around 1,200-1,500 words. Be specific with exact product names, published specifications, fitment, current availability, and warranty information only when supplied. Do not claim personal or Trail Built product use, trials, driving, ownership, or mileage.
-Each product MUST use the exact corresponding name and ASIN from the approved pool. Use the concrete https://www.amazon.com/dp/{exact approved ASIN}?tag=${ASSOCIATE_TAG} destination. Do NOT create Amazon search links, reuse ASINs, leave placeholders, recommend a product outside the pool, or include a product when no relevant approved entry exists. Do not add any product image or price markup; the generator will inject the canonical local-image card layout after validation.
+Make it around 1,200-1,500 words. Be specific with exact product names, published specifications, fitment, and warranty information only when supplied. Make no price, availability, rating, or review-count statement. Do not claim personal or Trail Built product use, trials, driving, ownership, or mileage.
+Each product MUST use the exact corresponding name and ASIN from the approved pool. Use the concrete https://www.amazon.com/dp/{exact approved ASIN}?tag=${ASSOCIATE_TAG} destination. Do NOT create Amazon search links, reuse ASINs, leave placeholders, recommend a product outside the pool, or include a product when no relevant approved entry exists. Do not add any product image, price, or stock markup; the generator will inject the canonical local-image card layout after validation.
 
 Approved topic-relevant product pool (the complete allowed list for this article):
 ${productPool || '(No relevant pool products are available. Write the guide without product boxes or Amazon links.)'}
@@ -1016,6 +1017,7 @@ async function generateMeta(topic) {
 2. A meta description (min 100 chars, max 155 chars, mention research, year 2026, and specific product types)
 
 Do not provide image URLs; article heroes are selected deterministically from the curated local hero library.
+Do not mention prices, costs, discounts, stock, ratings, or reviews.
 Return as JSON: {"title": "...", "description": "..."}`;
 
   const raw = await groqRequest([
@@ -1026,16 +1028,25 @@ Return as JSON: {"title": "...", "description": "..."}`;
     const parsed = JSON.parse(raw.trim());
     // Enforce minimum description length
     if (parsed.description && parsed.description.length < 100) {
-      parsed.description = parsed.description + ` Compare published specifications, fitment, pricing, and warranty details for overlanding build planning in 2026.`;
+      parsed.description = parsed.description + ` Compare published specifications, fitment, and warranty details for overlanding build planning in 2026.`;
       if (parsed.description.length > 155) parsed.description = parsed.description.substring(0, 152) + '...';
     }
+    // No-price mode: a model-written title or description that makes a price, stock,
+    // rating or review claim is replaced by the deterministic text below.
+    if (findPriceClaims(`${parsed.title || ''} ${parsed.description || ''}`).length > 0) return fallbackMeta(topic);
     return parsed;
   } catch {
-    return {
-      title: `Best ${topic} 2026 — Trail Built`,
-      description: `Research-based overlanding gear reviews for ${topic} in 2026, comparing published specifications, fitment, pricing, and warranty information.`,
-    };
+    return fallbackMeta(topic);
   }
+}
+
+function fallbackMeta(topic) {
+  // Topics usually start with "best": do not produce "Best best ...".
+  const subject = String(topic).replace(/^best\s+/i, '');
+  return {
+    title: `Best ${subject} 2026 — Trail Built`,
+    description: `Research-based overlanding gear guide for ${subject} in 2026, comparing published specifications, fitment, and warranty information.`,
+  };
 }
 
 // ── HTML template ─────────────────────────────────────────────────────────────
@@ -1331,6 +1342,20 @@ function publishTierOutputs(pool, usedAsins, outputFile = process.env.GITHUB_OUT
   fs.appendFileSync(outputFile, `${lines.join('\n')}\n`);
 }
 
+/**
+ * Why no draft passed. The original ASIN/image message is kept for that cause; when price,
+ * stock, rating or review claims were the (or a) reason, the message says so by name.
+ */
+function generationFailureMessage(causes, maxAttempts, priceClaims = []) {
+  const original = `[asin-precheck] Blocking publish: no generated draft passed ASIN and local-product-image validation after ${maxAttempts} attempts.`;
+  const priceAttempts = causes.filter(cause => cause === 'price-claims').length;
+  if (priceAttempts === 0) return original;
+  const named = `[no-price] Blocking publish: ${priceAttempts} of ${causes.length} generated draft(s) contained price, stock, rating or review claims (last: ${describeClaims(priceClaims)}).`;
+  return priceAttempts === causes.length
+    ? `${named} No draft passed the no-price content check after ${maxAttempts} attempts.`
+    : `${named} The remaining attempts failed ASIN or local-product-image validation. ${original}`;
+}
+
 async function main() {
   if (!GROQ_API_KEY) {
     console.error('ERROR: GROQ_API_KEY environment variable is not set.');
@@ -1368,6 +1393,8 @@ async function main() {
   const excludedImageAsins = new Set();
   let bodyHTML, meta, productCards;
   let generationPassed = false;
+  const attemptCauses = [];
+  let lastPriceClaims = [];
   for (let attempt = 1; attempt <= MAX_ASIN_RETRIES; attempt++) {
     console.log(`\n[asin-precheck] Generation attempt ${attempt}/${MAX_ASIN_RETRIES}`);
     [bodyHTML, meta] = await Promise.all([
@@ -1375,9 +1402,17 @@ async function main() {
       attempt === 1 ? generateMeta(topic) : Promise.resolve(meta), // reuse meta on retries
     ]);
     meta.ogImage = heroSelection.primary;
+    const priceClaims = findPriceClaims(bodyHTML);
+    if (priceClaims.length > 0) {
+      console.warn(`[no-price] ⚠️  Attempt ${attempt}: ${describeClaims(priceClaims)}`);
+      attemptCauses.push('price-claims');
+      lastPriceClaims = priceClaims;
+      continue;
+    }
     const { ok, failed } = await validateBodyAsins(bodyHTML, verifiedPool, undefined, { carryForwardAsins: verifiedPool.evidence.carriedAsins });
     if (failed.length > 0) {
       console.warn(`[asin-precheck] ⚠️  Attempt ${attempt}: ${failed.join('; ')}`);
+      attemptCauses.push('asin-or-image');
       continue;
     }
 
@@ -1390,12 +1425,13 @@ async function main() {
     } catch (error) {
       if (error.asin) excludedImageAsins.add(error.asin);
       console.warn(`[product-images] ⚠️  Attempt ${attempt}: ${error.message}`);
+      attemptCauses.push('asin-or-image');
       if (!error.asin) break;
       console.log(`[product-images] Retrying generation with ${error.asin} excluded so another verified pool product can be selected.`);
     }
   }
   if (!generationPassed) {
-    throw new Error(`[asin-precheck] Blocking publish: no generated draft passed ASIN and local-product-image validation after ${MAX_ASIN_RETRIES} attempts.`);
+    throw new Error(generationFailureMessage(attemptCauses, MAX_ASIN_RETRIES, lastPriceClaims));
   }
   updatePoolImageMetadata(VERIFIED_POOL_FILE, productCards.imageMetadata);
   publishTierOutputs(verifiedPool, extractAsins(bodyHTML));
@@ -1417,6 +1453,9 @@ async function main() {
     dateHuman,
     products,
   });
+
+  // Last line of defence for the no-price mode: the finished page, JSON-LD included.
+  assertNoPriceClaims(html, { mode: 'page' });
 
   fs.writeFileSync(outPath, html);
   recordUsedHeroImage(slug, meta.ogImage);
@@ -1449,6 +1488,9 @@ module.exports = {
   extractFaqSchemaPairs,
   buildCommerceSchemas,
   buildHTML,
+  buildComparisonTable,
+  fallbackMeta,
+  generationFailureMessage,
   loadHeroLibrary,
   heroImageKey,
   scanCurrentEditorialImageKeys,

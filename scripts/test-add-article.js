@@ -8,7 +8,7 @@
  *
  *   <tmp>/scripts/generate-article.js   copy of the REAL file, with one line
  *                                       appended that exports addArticleToIndex
- *   <tmp>/scripts/asin-verification.js, lookup-outage.js  copies (generate-article.js requires them)
+ *   <tmp>/scripts/asin-verification.js, lookup-outage.js, no-price-claims.js  copies (generate-article.js requires them)
  *   <tmp>/scripts/sync-homepage-latest.js copy (addArticleToIndex runs it)
  *   <tmp>/data/hero-images.json         copy (generate-article.js loads it at require time)
  *   <tmp>/index.html + <tmp>/articles/  small fixtures
@@ -121,7 +121,7 @@ function makeSite(indexHtml, articleSlugs) {
     path.join(scriptsDir, 'generate-article.js'),
     `${source}\nmodule.exports.addArticleToIndex = addArticleToIndex;\n`
   );
-  for (const helper of ['asin-verification.js', 'lookup-outage.js', 'sync-homepage-latest.js']) {
+  for (const helper of ['asin-verification.js', 'lookup-outage.js', 'no-price-claims.js', 'sync-homepage-latest.js']) {
     fs.copyFileSync(path.join(SCRIPTS_DIR, helper), path.join(scriptsDir, helper));
   }
   if (indexHtml !== null) fs.writeFileSync(path.join(root, 'index.html'), indexHtml);
