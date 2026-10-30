@@ -1,10 +1,10 @@
 {
-  "generated": "2026-10-19T20:40:47.004Z",
+  "generated": "2026-10-30T15:19:49.166Z",
   "summary": {
-    "pages": 43,
+    "pages": 44,
     "issues": 0,
     "warnings": 7,
-    "passed": 461
+    "passed": 472
   },
   "issues": [],
   "warnings": [
@@ -390,6 +390,17 @@
     "[/articles/best-overlanding-winches.html] All 15 Amazon links have affiliate tag",
     "[/articles/best-overlanding-winches.html] No placeholder href='#' links",
     "[/articles/best-overlanding-winches.html] JSON-LD structured data present",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] Title OK (51 chars)",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] Meta description OK (146 chars)",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] Canonical URL present and correct",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] og:title present",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] og:description present",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] og:image present",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] robots meta present",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] Single H1 tag",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] All 10 Amazon links have affiliate tag",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] No placeholder href='#' links",
+    "[/articles/best-packable-overlanding-gear-that-earns-its-space.html] JSON-LD structured data present",
     "[/articles/best-portable-power-stations-for-overlanding.html] Title OK (56 chars)",
     "[/articles/best-portable-power-stations-for-overlanding.html] Meta description OK (127 chars)",
     "[/articles/best-portable-power-stations-for-overlanding.html] Canonical URL present and correct",
@@ -479,7 +490,7 @@
     "[/articles/toyota-tacoma-overland-build-guide.html] No placeholder href='#' links",
     "[/articles/toyota-tacoma-overland-build-guide.html] JSON-LD structured data present",
     "robots.txt references sitemap",
-    "sitemap.xml has 41 URLs with correct domain"
+    "sitemap.xml has 42 URLs with correct domain"
   ],
   "pages": [
     {
@@ -1145,6 +1156,25 @@
         "robots meta present",
         "Single H1 tag",
         "All 15 Amazon links have affiliate tag",
+        "No placeholder href='#' links",
+        "JSON-LD structured data present"
+      ]
+    },
+    {
+      "url": "/articles/best-packable-overlanding-gear-that-earns-its-space.html",
+      "type": "article",
+      "issues": [],
+      "warnings": [],
+      "passed": [
+        "Title OK (51 chars)",
+        "Meta description OK (146 chars)",
+        "Canonical URL present and correct",
+        "og:title present",
+        "og:description present",
+        "og:image present",
+        "robots meta present",
+        "Single H1 tag",
+        "All 10 Amazon links have affiliate tag",
         "No placeholder href='#' links",
         "JSON-LD structured data present"
       ]
