@@ -1032,9 +1032,11 @@ Return as JSON: {"title": "...", "description": "..."}`;
 }
 
 function fallbackMeta(topic) {
+  // Topics usually start with "best": do not produce "Best best ...".
+  const subject = String(topic).replace(/^best\s+/i, '');
   return {
-    title: `Best ${topic} 2026 — Trail Built`,
-    description: `Research-based overlanding gear guide for ${topic} in 2026, comparing published specifications, fitment, and warranty information.`,
+    title: `Best ${subject} 2026 — Trail Built`,
+    description: `Research-based overlanding gear guide for ${subject} in 2026, comparing published specifications, fitment, and warranty information.`,
   };
 }
 
@@ -1331,6 +1333,20 @@ function publishTierOutputs(pool, usedAsins, outputFile = process.env.GITHUB_OUT
   fs.appendFileSync(outputFile, `${lines.join('\n')}\n`);
 }
 
+/**
+ * Why no draft passed. The original ASIN/image message is kept for that cause; when price,
+ * stock, rating or review claims were the (or a) reason, the message says so by name.
+ */
+function generationFailureMessage(causes, maxAttempts, priceClaims = []) {
+  const original = `[asin-precheck] Blocking publish: no generated draft passed ASIN and local-product-image validation after ${maxAttempts} attempts.`;
+  const priceAttempts = causes.filter(cause => cause === 'price-claims').length;
+  if (priceAttempts === 0) return original;
+  const named = `[no-price] Blocking publish: ${priceAttempts} of ${causes.length} generated draft(s) contained price, stock, rating or review claims (last: ${describeClaims(priceClaims)}).`;
+  return priceAttempts === causes.length
+    ? `${named} No draft passed the no-price content check after ${maxAttempts} attempts.`
+    : `${named} The remaining attempts failed ASIN or local-product-image validation. ${original}`;
+}
+
 async function main() {
   if (!GROQ_API_KEY) {
     console.error('ERROR: GROQ_API_KEY environment variable is not set.');
@@ -1368,6 +1384,8 @@ async function main() {
   const excludedImageAsins = new Set();
   let bodyHTML, meta, productCards;
   let generationPassed = false;
+  const attemptCauses = [];
+  let lastPriceClaims = [];
   for (let attempt = 1; attempt <= MAX_ASIN_RETRIES; attempt++) {
     console.log(`\n[asin-precheck] Generation attempt ${attempt}/${MAX_ASIN_RETRIES}`);
     [bodyHTML, meta] = await Promise.all([
@@ -1378,11 +1396,14 @@ async function main() {
     const priceClaims = findPriceClaims(bodyHTML);
     if (priceClaims.length > 0) {
       console.warn(`[no-price] ⚠️  Attempt ${attempt}: ${describeClaims(priceClaims)}`);
+      attemptCauses.push('price-claims');
+      lastPriceClaims = priceClaims;
       continue;
     }
     const { ok, failed } = await validateBodyAsins(bodyHTML, verifiedPool, undefined, { carryForwardAsins: verifiedPool.evidence.carriedAsins });
     if (failed.length > 0) {
       console.warn(`[asin-precheck] ⚠️  Attempt ${attempt}: ${failed.join('; ')}`);
+      attemptCauses.push('asin-or-image');
       continue;
     }
 
@@ -1395,12 +1416,13 @@ async function main() {
     } catch (error) {
       if (error.asin) excludedImageAsins.add(error.asin);
       console.warn(`[product-images] ⚠️  Attempt ${attempt}: ${error.message}`);
+      attemptCauses.push('asin-or-image');
       if (!error.asin) break;
       console.log(`[product-images] Retrying generation with ${error.asin} excluded so another verified pool product can be selected.`);
     }
   }
   if (!generationPassed) {
-    throw new Error(`[asin-precheck] Blocking publish: no generated draft passed ASIN and local-product-image validation after ${MAX_ASIN_RETRIES} attempts.`);
+    throw new Error(generationFailureMessage(attemptCauses, MAX_ASIN_RETRIES, lastPriceClaims));
   }
   updatePoolImageMetadata(VERIFIED_POOL_FILE, productCards.imageMetadata);
   publishTierOutputs(verifiedPool, extractAsins(bodyHTML));
@@ -1459,6 +1481,7 @@ module.exports = {
   buildHTML,
   buildComparisonTable,
   fallbackMeta,
+  generationFailureMessage,
   loadHeroLibrary,
   heroImageKey,
   scanCurrentEditorialImageKeys,

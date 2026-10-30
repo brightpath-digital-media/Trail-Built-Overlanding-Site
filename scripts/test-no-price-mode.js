@@ -197,6 +197,8 @@ async function run() {
   assert.ok(/const priceClaims = findPriceClaims\(bodyHTML\);\s+if \(priceClaims\.length > 0\)/.test(generator), 'model output must be checked in the retry loop');
   assert.ok(generator.indexOf("assertNoPriceClaims(html, { mode: 'page' })") !== -1
     && generator.indexOf("assertNoPriceClaims(html, { mode: 'page' })") < generator.indexOf('fs.writeFileSync(outPath, html)'), 'the finished page must be checked before it is written');
+  assert.ok(/attemptCauses\.push\('price-claims'\);\s+lastPriceClaims = priceClaims;/.test(generator), 'a price-claim failure must be recorded as its own cause');
+  assert.ok(/throw new Error\(generationFailureMessage\(attemptCauses, MAX_ASIN_RETRIES, lastPriceClaims\)\)/.test(generator), 'the exhausted loop must name its cause');
   assert.ok(/NO-PRICE MODE: never state or imply a price/.test(generator), 'the prompt must forbid price claims');
 
   console.log('No-price mode test passed: generated HTML and JSON-LD carry no price, stock, discount, rating or review claim.');
