@@ -105,6 +105,25 @@ function writeRunReport(file, report) {
   fs.writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 }
 
+/**
+ * Fail-closed check for per-ASIN kinds. When the report counts product-specific ('other')
+ * failures, failed_kinds must be a plain object that accounts for at least that many ASINs;
+ * otherwise (old-style, truncated or tampered report) we cannot tell which entries failed on
+ * their own lookup, so carry-forward must not run at all. Returns { ok, reason }.
+ */
+function otherFailuresAccounted(report) {
+  const expected = Number(report?.failures?.other) || 0;
+  if (expected === 0) return { ok: true, reason: '' };
+  const kinds = report?.failed_kinds;
+  if (!kinds || typeof kinds !== 'object' || Array.isArray(kinds)) {
+    return { ok: false, reason: `the run report counts ${expected} product-specific failure(s) but has no usable failed_kinds` };
+  }
+  const named = Object.values(kinds).filter(kind => kind === 'other').length;
+  return named >= expected
+    ? { ok: true, reason: '' }
+    : { ok: false, reason: `the run report counts ${expected} product-specific failure(s) but failed_kinds names only ${named}` };
+}
+
 /** The verdict is always recomputed from counts; a stored classification field is not trusted. */
 function classifyRunReport(report) {
   return report ? classifyCounts(report) : null;
@@ -117,6 +136,7 @@ module.exports = {
   classifyCounts,
   classifyRunReport,
   failureKind,
+  otherFailuresAccounted,
   readRunReport,
   writeRunReport,
 };

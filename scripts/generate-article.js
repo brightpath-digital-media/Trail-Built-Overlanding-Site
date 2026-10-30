@@ -17,7 +17,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createAsinVerifier } = require('./asin-verification');
-const { classifyRunReport, readRunReport } = require('./lookup-outage');
+const { classifyRunReport, otherFailuresAccounted, readRunReport } = require('./lookup-outage');
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSOCIATE_TAG  = process.env.AMAZON_ASSOCIATE_TAG || 'trailbuiltove-20';
@@ -368,15 +368,21 @@ function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus =
   const tier1 = requireVerifiedStatus ? entries.filter(product => product.verification_status === 'verified') : entries;
   let carried = [];
   let classification = null;
+  let carryForwardSkippedReason = '';
   const excluded = {};
   if (requireVerifiedStatus && allowCarryForward) {
     const report = options.runReport !== undefined ? options.runReport : readRunReport(process.env.POOL_RUN_REPORT);
     classification = classifyRunReport(report);
-    if (classification === 'LOOKUP_OUTAGE') {
+    const accounted = classification === 'LOOKUP_OUTAGE' ? otherFailuresAccounted(report) : { ok: true, reason: '' };
+    if (!accounted.ok) {
+      // Fail closed: without per-ASIN kinds a product whose own lookup failed could be carried.
+      carryForwardSkippedReason = accounted.reason;
+      console.log(`[asin-precheck] LOOKUP_OUTAGE: carry-forward skipped, ${accounted.reason}`);
+    } else if (classification === 'LOOKUP_OUTAGE') {
       const context = {
         today: options.today || todayISO(),
         hasLocalImage: options.hasLocalImage || (product => Boolean(findExistingLocalProductImage(product))),
-        failedKinds: report?.failed_kinds || {},
+        failedKinds: report?.failed_kinds && typeof report.failed_kinds === 'object' && !Array.isArray(report.failed_kinds) ? report.failed_kinds : {},
       };
       for (const product of entries) {
         if (product.verification_status === 'verified') continue;
@@ -392,7 +398,9 @@ function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus =
   if (pool.size === 0) {
     const state = requireVerifiedStatus ? 'runtime-verified' : 'seed';
     const outageNote = classification === 'LOOKUP_OUTAGE'
-      ? ` (LOOKUP_OUTAGE: no carry-forward entry qualified; excluded ${JSON.stringify(excluded)})`
+      ? (carryForwardSkippedReason
+        ? ` (LOOKUP_OUTAGE: carry-forward skipped, ${carryForwardSkippedReason})`
+        : ` (LOOKUP_OUTAGE: no carry-forward entry qualified; excluded ${JSON.stringify(excluded)})`)
       : '';
     throw new Error(`[asin-precheck] No ${state} product entries are available in ${poolFile}${outageNote}`);
   }
@@ -409,6 +417,7 @@ function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus =
       carried: carried.length,
       carriedAsins: new Set(carried.map(product => product.asin)),
       excluded,
+      carryForwardSkippedReason,
     },
   });
   return pool;

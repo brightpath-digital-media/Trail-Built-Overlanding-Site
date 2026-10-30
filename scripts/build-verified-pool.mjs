@@ -139,6 +139,14 @@ function readPool(file) {
   return { document: Array.isArray(parsed) ? {} : parsed, products };
 }
 
+/**
+ * Run report from the verifier's Map<asin, result>. The verifier's results do not carry their
+ * ASIN, so it is attached here; that is what lets the loader exclude an entry whose own lookup failed.
+ */
+function reportFromResults(results, credentials = {}) {
+  return buildRunReport([...results].map(([asin, result]) => ({ ...result, asin })), { credentials });
+}
+
 /** Verify every product with the injected verifier; returns Map<asin, result>. Never mutates products. */
 async function verifyProducts(products, verifier, log = console.log) {
   const results = new Map();
@@ -322,7 +330,7 @@ async function main() {
     }
     results = await verifyProducts(seedProducts, createAsinVerifier({ credentials }));
     if (RUN_REPORT_FILE) {
-      const report = buildRunReport([...results].map(([asin, result]) => ({ ...result, asin })), { credentials });
+      const report = reportFromResults(results, credentials);
       writeRunReport(RUN_REPORT_FILE, report);
       console.log(`[verified-pool] Lookup run: ${report.live} LIVE of ${report.total}; failures ${JSON.stringify(report.failures)}; ${report.classification}.`);
     }
@@ -360,6 +368,7 @@ export {
   mergeProducts,
   persistWorkingFile,
   persistedProducts,
+  reportFromResults,
   verifyProducts,
 };
 
