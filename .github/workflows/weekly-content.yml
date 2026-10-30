@@ -142,7 +142,27 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
-          node scripts/build-verified-pool.mjs --verify 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/build-verified-product-pool.log"
+          node scripts/build-verified-pool.mjs --verify --run-report "$RUNNER_TEMP/pool-run-report.json" 2>&1 | tee "$RUNNER_TEMP/weekly-content-logs/build-verified-product-pool.log"
+
+      # ── 3c. Classify the lookup run; open/update/close the outage issue ───────
+      # Informational: never blocks publishing. Counts and masked samples only, no credentials.
+      - name: Report lookup outage (informational)
+        id: lookup_outage_issue
+        if: steps.check_published.outputs.skip != 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
+          CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
+          AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            node scripts/sync-outage-issue.js "$RUNNER_TEMP/pool-run-report.json" --dry-run
+          else
+            node scripts/sync-outage-issue.js "$RUNNER_TEMP/pool-run-report.json"
+          fi
 
       # ── 4. Generate article ──────────────────────────────────────────────────
       - name: Generate new article
@@ -155,6 +175,11 @@ jobs:
           CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
           CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
           REQUIRE_POOL_VERIFICATION: 'true'
+          # The pool build's lookup summary; the loader classifies the run from it.
+          POOL_RUN_REPORT: ${{ runner.temp }}/pool-run-report.json
+          # Carry-forward (tier 2/3) is deliberately not enabled in any workflow. It is a
+          # publishing-gate change that needs Kyle's explicit approval; until then a lookup
+          # outage fails closed exactly as before. The switch is described in the PR.
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
@@ -254,6 +279,8 @@ jobs:
       - name: Commit new article and updated files
         id: commit_article
         if: ${{ github.event.inputs.dry_run != 'true' && steps.check_published.outputs.skip != 'true' }}
+        env:
+          TIER_BODY: ${{ steps.generate_article.outputs.commit_body }}
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
@@ -274,7 +301,12 @@ jobs:
               git add data/verified-products.json
             fi
             ARTICLE=$(ls -t articles/*.html | head -1 | xargs basename)
-            git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)"
+            if [ -n "$TIER_BODY" ]; then
+              # Carry-forward only: the evidence tier goes in the commit BODY; the subject is unchanged.
+              git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)" -m "$TIER_BODY"
+            else
+              git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)"
+            fi
             echo "ARTICLE_SLUG=${ARTICLE}" >> $GITHUB_ENV
           fi
 
