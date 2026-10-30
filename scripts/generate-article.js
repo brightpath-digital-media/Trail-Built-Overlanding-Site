@@ -17,6 +17,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { createAsinVerifier } = require('./asin-verification');
+const { classifyRunReport, readRunReport } = require('./lookup-outage');
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSOCIATE_TAG  = process.env.AMAZON_ASSOCIATE_TAG || 'trailbuiltove-20';
@@ -292,30 +293,112 @@ const POOL_STOP_WORDS = new Set([
   'the', 'to', 'vs', 'with', 'your', 'setup', 'comparison', 'complete', 'gear',
 ]);
 
-function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus = process.env.REQUIRE_POOL_VERIFICATION === 'true') {
+// ── Evidence tiers (plan section 3) ──────────────────────────────────────────
+// Tier 1 = verified by a LIVE Creators API lookup in this run (today's behaviour).
+// Tier 2/3 = carry-forward: only when the run is classified LOOKUP_OUTAGE AND the operator
+// has set ALLOW_CARRY_FORWARD=true. That flag is OFF by default and is not set in any workflow;
+// turning it on is a publishing-gate decision that needs Kyle's explicit approval.
+const CARRY_FORWARD_MAX_AGE_DAYS = 45;
+const CARRY_FORWARD_SOURCES = new Set(['creators_api', 'published-history', 'page-recheck']);
+
+function utcDayNumber(isoDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate || '')) return NaN;
+  const time = Date.parse(`${isoDate}T00:00:00Z`);
+  return Number.isFinite(time) ? Math.floor(time / 86400000) : NaN;
+}
+
+/** Why a non-verified entry may not be carried forward, or '' when it may. (Delisted entries never get here.) */
+function carryForwardExclusion(product, { today, hasLocalImage }) {
+  if (!CARRY_FORWARD_SOURCES.has(product.verification_source) || !Number.isFinite(utcDayNumber(product.last_verified_at))) return 'no-evidence';
+  const age = utcDayNumber(today) - utcDayNumber(product.last_verified_at);
+  if (!(age >= 0)) return 'no-evidence';
+  if (age > CARRY_FORWARD_MAX_AGE_DAYS) return 'expired';
+  if (!hasLocalImage(product)) return 'no-local-image';
+  return '';
+}
+
+/**
+ * options (all optional; tests inject them): allowCarryForward, runReport (parsed report or
+ * null), today ('YYYY-MM-DD' UTC), hasLocalImage(product). The returned Map carries a
+ * non-enumerable `evidence` summary: { tier, classification, tier1, carried, carriedAsins, excluded }.
+ */
+function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus = process.env.REQUIRE_POOL_VERIFICATION === 'true', options = {}) {
   const parsed = JSON.parse(fs.readFileSync(poolFile, 'utf8'));
   const products = Array.isArray(parsed) ? parsed : parsed.products;
   if (!Array.isArray(products) || products.length === 0) {
     throw new Error(`[asin-precheck] Verified product pool is empty: ${poolFile}`);
   }
-  const pool = new Map();
+  const allowCarryForward = options.allowCarryForward !== undefined
+    ? options.allowCarryForward === true
+    : process.env.ALLOW_CARRY_FORWARD === 'true';
+  const byAsin = new Map();
   for (const product of products) {
-    if (requireVerifiedStatus && product.verification_status !== 'verified') continue;
+    // Same as before: when verification is required, entries that are not verified are only
+    // carry-forward candidates, so a malformed or duplicate one is skipped, not fatal.
+    const candidateOnly = requireVerifiedStatus && product.verification_status !== 'verified';
     if (!/^[A-Z0-9]{10}$/.test(product.asin || '')) {
+      if (candidateOnly) continue;
       throw new Error(`[asin-precheck] Invalid pool ASIN: ${product.asin || '(missing)'}`);
     }
     if (!product.name || !Array.isArray(product.tags)) {
+      if (candidateOnly) continue;
       throw new Error(`[asin-precheck] Pool entry ${product.asin} is missing a name or tags array`);
     }
-    if (pool.has(product.asin)) {
+    const existing = byAsin.get(product.asin);
+    if (existing && (!existing.candidateOnly || candidateOnly)) {
+      if (candidateOnly) continue;
       throw new Error(`[asin-precheck] Duplicate pool ASIN: ${product.asin}`);
     }
-    pool.set(product.asin, product);
+    byAsin.set(product.asin, { product, candidateOnly });
   }
+  // A product the monthly page recheck reported gone is never used, in any tier.
+  const entries = [...byAsin.values()].map(entry => entry.product).filter(product => !product.delisted_at);
+
+  const tier1 = requireVerifiedStatus ? entries.filter(product => product.verification_status === 'verified') : entries;
+  let carried = [];
+  let classification = null;
+  const excluded = {};
+  if (requireVerifiedStatus && allowCarryForward) {
+    const report = options.runReport !== undefined ? options.runReport : readRunReport(process.env.POOL_RUN_REPORT);
+    classification = classifyRunReport(report);
+    if (classification === 'LOOKUP_OUTAGE') {
+      const context = {
+        today: options.today || todayISO(),
+        hasLocalImage: options.hasLocalImage || (product => Boolean(findExistingLocalProductImage(product))),
+      };
+      for (const product of entries) {
+        if (product.verification_status === 'verified') continue;
+        const reason = carryForwardExclusion(product, context);
+        if (reason) excluded[reason] = (excluded[reason] || 0) + 1;
+        else carried.push(product);
+      }
+    }
+  }
+
+  const pool = new Map();
+  for (const product of [...tier1, ...carried]) pool.set(product.asin, product);
   if (pool.size === 0) {
     const state = requireVerifiedStatus ? 'runtime-verified' : 'seed';
-    throw new Error(`[asin-precheck] No ${state} product entries are available in ${poolFile}`);
+    const outageNote = classification === 'LOOKUP_OUTAGE'
+      ? ` (LOOKUP_OUTAGE: no carry-forward entry qualified; excluded ${JSON.stringify(excluded)})`
+      : '';
+    throw new Error(`[asin-precheck] No ${state} product entries are available in ${poolFile}${outageNote}`);
   }
+  if (carried.length > 0) {
+    console.log('[asin-precheck] LOOKUP_OUTAGE: using carry-forward pool (tier 2/3)');
+    console.log(`[asin-precheck] carry-forward: ${carried.length} entr${carried.length === 1 ? 'y' : 'ies'} within ${CARRY_FORWARD_MAX_AGE_DAYS} days with a local image; tier 1: ${tier1.length}; excluded ${JSON.stringify(excluded)}`);
+  }
+  Object.defineProperty(pool, 'evidence', {
+    enumerable: false,
+    value: {
+      tier: carried.length > 0 ? 'carry-forward' : 'tier-1',
+      classification,
+      tier1: tier1.length,
+      carried: carried.length,
+      carriedAsins: new Set(carried.map(product => product.asin)),
+      excluded,
+    },
+  });
   return pool;
 }
 
@@ -350,8 +433,11 @@ function extractAsins(html) {
 /**
  * Enforce direct links, verified-pool membership, and live Creators API evidence.
  * INCONCLUSIVE API evidence remains blocking, preserving the publish gate.
+ * options.carryForwardAsins: ASINs admitted by the LOOKUP_OUTAGE carry-forward tier. The live
+ * lookup is skipped for them (it is the thing that is down) but they still need a local image.
  */
-async function validateBodyAsins(bodyHTML, pool, verifier = createAsinVerifier()) {
+async function validateBodyAsins(bodyHTML, pool, verifier = createAsinVerifier(), options = {}) {
+  const carryForwardAsins = options.carryForwardAsins || new Set();
   if (/amazon\.com\/s\?/i.test(bodyHTML)) {
     return { ok: [], failed: ['Amazon search URLs are prohibited'] };
   }
@@ -365,6 +451,16 @@ async function validateBodyAsins(bodyHTML, pool, verifier = createAsinVerifier()
     if (!pool.has(asin)) {
       failed.push(`${asin}: not in verified product pool`);
       console.log(`[asin-precheck] ${asin}: NOT_IN_POOL`);
+      continue;
+    }
+    if (carryForwardAsins.has(asin)) {
+      const carried = pool.get(asin);
+      if (findExistingLocalProductImage(carried)) {
+        console.log(`[asin-precheck] ${asin}: CARRY_FORWARD (last verified ${carried.last_verified_at} via ${carried.verification_source})`);
+        ok.push(asin);
+      } else {
+        failed.push(`${asin}: carry-forward product has no local product image`);
+      }
       continue;
     }
     const result = await verifier.verifyAsin(asin);
@@ -1185,6 +1281,32 @@ function updateSitemap(slug, date) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
+/**
+ * Tell the workflow which evidence tier produced the pool. `evidence_tier` is always written to
+ * GITHUB_OUTPUT; `commit_body` only when carry-forward was used, so a healthy Tier 1 run's
+ * commit is exactly what it was before. The commit subject is never touched.
+ */
+function tierCommitBody(pool, usedAsins) {
+  const evidence = pool.evidence;
+  if (!evidence || evidence.tier !== 'carry-forward') return '';
+  const carriedUsed = usedAsins.filter(asin => evidence.carriedAsins.has(asin));
+  return [
+    'evidence-tier: carry-forward (lookup outage, tier 2/3)',
+    `carry-forward ASINs used: ${carriedUsed.length} of ${usedAsins.length}`,
+    ...carriedUsed.map(asin => `  ${asin} last_verified_at=${pool.get(asin).last_verified_at} source=${pool.get(asin).verification_source}`),
+  ].join('\n');
+}
+
+function publishTierOutputs(pool, usedAsins, outputFile = process.env.GITHUB_OUTPUT) {
+  const evidence = pool.evidence || { tier: 'tier-1', classification: null };
+  console.log(`[asin-precheck] Evidence tier used: ${evidence.tier}`);
+  if (!outputFile) return;
+  const lines = [`evidence_tier=${evidence.tier}`];
+  const body = tierCommitBody(pool, usedAsins);
+  if (body) lines.push('commit_body<<TIER_BODY_EOF', body, 'TIER_BODY_EOF');
+  fs.appendFileSync(outputFile, `${lines.join('\n')}\n`);
+}
+
 async function main() {
   if (!GROQ_API_KEY) {
     console.error('ERROR: GROQ_API_KEY environment variable is not set.');
@@ -1229,7 +1351,7 @@ async function main() {
       attempt === 1 ? generateMeta(topic) : Promise.resolve(meta), // reuse meta on retries
     ]);
     meta.ogImage = heroSelection.primary;
-    const { ok, failed } = await validateBodyAsins(bodyHTML, verifiedPool);
+    const { ok, failed } = await validateBodyAsins(bodyHTML, verifiedPool, undefined, { carryForwardAsins: verifiedPool.evidence.carriedAsins });
     if (failed.length > 0) {
       console.warn(`[asin-precheck] ⚠️  Attempt ${attempt}: ${failed.join('; ')}`);
       continue;
@@ -1252,6 +1374,7 @@ async function main() {
     throw new Error(`[asin-precheck] Blocking publish: no generated draft passed ASIN and local-product-image validation after ${MAX_ASIN_RETRIES} attempts.`);
   }
   updatePoolImageMetadata(VERIFIED_POOL_FILE, productCards.imageMetadata);
+  publishTierOutputs(verifiedPool, extractAsins(bodyHTML));
 
   // Validate hero image URL — reject dead URLs before writing the article file.
   // This prevents the link-check gate from failing in CI.
@@ -1291,6 +1414,8 @@ module.exports = {
   createGroqHttpError,
   extractAsins,
   loadVerifiedPool,
+  publishTierOutputs,
+  tierCommitBody,
   filterPoolForTopic,
   validateBodyAsins,
   conformProductBoxes,

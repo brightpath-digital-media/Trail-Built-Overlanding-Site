@@ -23,6 +23,9 @@
  * verification_note) are removed, so a committed file never claims a status no run proved.
  * It prints persist=1 or persist=0 as its last line for the workflow to act on.
  *
+ * --run-report <file> (with --verify) writes counts of LIVE and failed lookups by failure
+ * kind (see scripts/lookup-outage.js). The generator classifies the run from it.
+ *
  * generated_at changes only when the committable content changes, so a rewrite with
  * nothing new produces a byte-identical file.
  */
@@ -36,6 +39,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { createAsinVerifier, getCreatorsCredentials } = require('./asin-verification.js');
+const { buildRunReport, writeRunReport } = require('./lookup-outage.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -44,6 +48,9 @@ const OUTPUT_FILE = path.join(REPO_ROOT, 'data', 'verified-products.json');
 const AFFILIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG || 'trailbuiltove-20';
 const VERIFY = process.argv.includes('--verify');
 const PERSIST = process.argv.includes('--persist');
+// --run-report <file>: write the credential-free lookup summary the evidence-tier loader reads.
+const RUN_REPORT_FLAG = process.argv.indexOf('--run-report');
+const RUN_REPORT_FILE = RUN_REPORT_FLAG !== -1 ? process.argv[RUN_REPORT_FLAG + 1] : '';
 const STATIC_VERIFICATION_MODE = 'pending verification; weekly precheck verifies at runtime';
 // Evidence from earlier real checks, carried across rebuilds. Order is the output order.
 const EVIDENCE_FIELDS = ['verification_source', 'last_verified_at', 'amazon_title', 'delisted_at', 'image_local_path'];
@@ -279,6 +286,11 @@ async function main() {
       throw new Error('--verify requires Creators API credentials in environment variables.');
     }
     results = await verifyProducts(seedProducts, createAsinVerifier({ credentials }));
+    if (RUN_REPORT_FILE) {
+      const report = buildRunReport([...results.values()], { credentials });
+      writeRunReport(RUN_REPORT_FILE, report);
+      console.log(`[verified-pool] Lookup run: ${report.live} LIVE of ${report.total}; failures ${JSON.stringify(report.failures)}; ${report.classification}.`);
+    }
   }
 
   const prior = readPool(OUTPUT_FILE);

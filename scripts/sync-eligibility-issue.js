@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const { STATES } = require('./amazon-eligibility-probe');
+const { api } = require('./github-issues-api');
 
 const TITLE = 'Amazon API eligibility';
 const LABEL = 'lookup-outage';
@@ -55,29 +56,6 @@ function shouldComment(previousState, newState) {
 
 function renderComment(previousState, result) {
   return `State changed: ${previousState} -> ${result.state} (HTTP ${result.http_status || 'n/a'}, code ${result.error_code || 'none'}) at ${result.checked_at}.`;
-}
-
-async function api(method, route, body, { token, repo }) {
-  const response = await fetch(`https://api.github.com/repos/${repo}${route}`, {
-    method,
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!response.ok && !(method === 'POST' && route === '/labels' && response.status === 422)) {
-    throw new Error(`GitHub ${method} ${route} failed: HTTP ${response.status}`);
-  }
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return {};
-  }
 }
 
 async function sync(result, ctx) {

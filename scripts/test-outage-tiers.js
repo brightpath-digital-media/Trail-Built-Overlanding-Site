@@ -1,0 +1,399 @@
+#!/usr/bin/env node
+/**
+ * Offline tests for the lookup-outage classifier, the evidence-tier pool loader and the
+ * outage issue sync. Fixtures and mocks only: no network, no credentials.
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const {
+  buildRunReport, classifyCounts, classifyRunReport, failureKind, readRunReport,
+} = require('./lookup-outage');
+const { loadVerifiedPool, validateBodyAsins, tierCommitBody, publishTierOutputs } = require('./generate-article');
+const outageIssue = require('./sync-outage-issue');
+
+const ROOT = path.join(__dirname, '..');
+const TODAY = '2026-10-30';
+const OLD_MESSAGE = file => `[asin-precheck] No runtime-verified product entries are available in ${file}`;
+const OUTAGE = 'LOOKUP_OUTAGE';
+const PRODUCT = 'PRODUCT_FAILURE';
+
+const empty = () => ({ status: 'INCONCLUSIVE', source: 'creators_api', http_status: 200, reason: 'No items returned' });
+const authFail = () => ({ status: 'INCONCLUSIVE', source: 'creators_api', stage: 'auth', http_status: 403, error_code: 'AssociateNotEligible', reason: 'HTTP 403 AssociateNotEligible' });
+const throttled = () => ({ status: 'INCONCLUSIVE', source: 'creators_api', http_status: 429, error_code: 'TooManyRequests', reason: 'Creators API throttled the lookup' });
+const transport = () => ({ status: 'INCONCLUSIVE', source: 'creators_api', http_status: 0, reason: 'Creators API request failed: socket hang up' });
+const other = () => ({ status: 'INCONCLUSIVE', source: 'creators_api', http_status: 404, error_code: 'ItemNotFound', reason: 'HTTP 404 ItemNotFound' });
+const live = () => ({ status: 'LIVE', source: 'creators_api', title: 'T', image_url: '', reason: '' });
+const repeat = (factory, count) => Array.from({ length: count }, factory);
+
+function product(asin, extra = {}) {
+  assert.ok(/^[A-Z0-9]{10}$/.test(asin), `fixture ASIN ${asin} must be 10 characters`);
+  return {
+    asin,
+    name: `Product ${asin}`,
+    category: 'test',
+    tags: ['test'],
+    affiliate_url: `https://www.amazon.com/dp/${asin}?tag=trailbuiltove-20`,
+    verification_status: 'pending-verification',
+    sources: ['articles/test.html'],
+    ...extra,
+  };
+}
+
+function withCapturedLog(fn) {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    return { value: fn(), lines };
+  } finally {
+    console.log = original;
+  }
+}
+
+function classifyResults(results) {
+  return classifyRunReport(buildRunReport(results));
+}
+
+function testClassifier() {
+  // All-empty lookup (the 10/26 failure) is an outage.
+  assert.strictEqual(classifyResults(repeat(empty, 126)), OUTAGE);
+  // 90 percent systemic failures is an outage; 89 percent is not.
+  assert.strictEqual(classifyResults([...repeat(live, 10), ...repeat(transport, 90)]), OUTAGE);
+  assert.strictEqual(classifyResults([...repeat(live, 11), ...repeat(transport, 89)]), PRODUCT);
+  // A minority failing while the rest are LIVE is a product failure.
+  assert.strictEqual(classifyResults([...repeat(live, 106), ...repeat(empty, 20)]), PRODUCT);
+  // A healthy run is not an outage.
+  assert.strictEqual(classifyResults(repeat(live, 126)), PRODUCT);
+  // Each systemic kind counts on its own.
+  assert.strictEqual(classifyResults(repeat(authFail, 126)), OUTAGE);
+  assert.strictEqual(classifyResults(repeat(throttled, 126)), OUTAGE);
+  assert.strictEqual(classifyResults(repeat(transport, 126)), OUTAGE);
+  // Product-specific errors (404 ItemNotFound) are not systemic, even when nothing is LIVE.
+  assert.strictEqual(classifyResults(repeat(other, 126)), PRODUCT);
+  // Zero LIVE across at least 20 ASINs needs a majority of systemic failures; fewer than 20 needs 90 percent.
+  assert.strictEqual(classifyResults([...repeat(empty, 12), ...repeat(other, 8)]), OUTAGE);
+  assert.strictEqual(classifyResults([...repeat(empty, 9), ...repeat(other, 11)]), PRODUCT);
+  assert.strictEqual(classifyResults([...repeat(empty, 8), ...repeat(other, 7)]), PRODUCT);
+  assert.strictEqual(classifyCounts({ total: 0, live: 0, failures: {} }), PRODUCT);
+  // The verdict is recomputed from counts: a forged classification field changes nothing.
+  assert.strictEqual(classifyRunReport({ total: 100, live: 100, failures: {}, classification: OUTAGE }), PRODUCT);
+  assert.strictEqual(classifyRunReport(null), null);
+  // Kinds.
+  assert.deepStrictEqual([empty(), authFail(), throttled(), transport(), other(), live()].map(failureKind), ['empty', 'auth', 'throttle', 'transport', 'other', null]);
+  assert.strictEqual(failureKind({ status: 'INCONCLUSIVE', source: 'creators_api', stage: 'auth', error_code: 'MissingCredentials', reason: 'Creators API credentials are unavailable' }), 'auth');
+  assert.strictEqual(failureKind({ status: 'INCONCLUSIVE', http_status: 503, reason: 'HTTP 503' }), 'transport');
+
+  // The report carries counts and a masked sample, never a credential.
+  const secret = 'sk-live-0123456789abcdefghijklmnop';
+  const report = buildRunReport([{ ...transport(), reason: `Creators API request failed: ${secret} fake-secret-value Bearer abc.def.ghi` }], { credentials: { clientId: secret, clientSecret: 'fake-secret-value', partnerTag: 'trailbuiltove-20' } });
+  assert.strictEqual(report.sample.kind, 'transport', 'the sample under test must exist');
+  assert.ok(!JSON.stringify(report).includes(secret), 'secret must be masked');
+  assert.ok(!JSON.stringify(report).includes('fake-secret-value'), 'configured secret must be masked');
+  assert.ok(!/Bearer abc/.test(JSON.stringify(report)));
+  const codeReport = buildRunReport([{ ...transport(), error_code: secret }], { credentials: { clientId: secret, clientSecret: 'fake-secret-value', partnerTag: 'trailbuiltove-20' } });
+  assert.strictEqual(codeReport.sample.error_code, '', 'a credential-shaped error code is dropped');
+  assert.ok(!JSON.stringify(codeReport).includes(secret));
+}
+
+function testLoader(dir) {
+  const file = path.join(dir, 'pool.json');
+  const write = products => fs.writeFileSync(file, JSON.stringify({ schema_version: 1, products }));
+  const evidence = (date, extra = {}) => ({ verification_source: 'creators_api', last_verified_at: date, ...extra });
+  const outageReport = buildRunReport(repeat(empty, 126));
+  const minorityReport = buildRunReport([...repeat(live, 106), ...repeat(empty, 20)]);
+  const noImage = new Set(['B0NOIMAGE1']);
+  const base = { today: TODAY, hasLocalImage: item => !noImage.has(item.asin) };
+
+  const fixtures = [
+    product('B0FRESH001', evidence('2026-10-17')),
+    product('B0LIMIT045', evidence('2026-09-15')), // exactly 45 days old: still inside
+    product('B0EXPIRED6', evidence('2026-09-14')), // 46 days old
+    product('B0NOIMAGE1', evidence('2026-10-17')),
+    product('B0DELISTED', evidence('2026-10-17', { delisted_at: '2026-10-25' })),
+    product('B0NOEVID01'),
+    product('B0BADSRC01', { verification_source: 'manual', last_verified_at: '2026-10-17' }),
+    product('B0FUTURE01', evidence('2026-11-30')),
+    product('B0SEEDED01', { verification_source: 'published-history', last_verified_at: '2026-10-19' }),
+  ];
+  write(fixtures);
+
+  // Outage + flag on: only entries inside the window, with a local image, not delisted.
+  const { value: carried, lines } = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: outageReport }));
+  assert.deepStrictEqual([...carried.keys()].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01']);
+  assert.strictEqual(carried.get('B0FRESH001').verification_status, 'pending-verification', 'carry-forward never relabels status');
+  assert.strictEqual(carried.evidence.tier, 'carry-forward');
+  assert.strictEqual(carried.evidence.classification, OUTAGE);
+  assert.deepStrictEqual(carried.evidence.excluded, { expired: 1, 'no-local-image': 1, 'no-evidence': 3 });
+  assert.ok(!carried.has('B0DELISTED'));
+  assert.strictEqual(lines.filter(line => line === '[asin-precheck] LOOKUP_OUTAGE: using carry-forward pool (tier 2/3)').length, 1);
+  assert.deepStrictEqual([...carried.evidence.carriedAsins].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01']);
+
+  // Minority failing is a product failure: fail closed, no carry-forward, even with the flag on.
+  assert.throws(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: minorityReport }), error => error.message === OLD_MESSAGE(file));
+  // Flag off (the default): fail closed with the old message, even in an outage.
+  assert.throws(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: false, runReport: outageReport }), error => error.message === OLD_MESSAGE(file));
+  // No usable report: no classification, fail closed.
+  assert.throws(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: null }), error => error.message === OLD_MESSAGE(file));
+
+  // Default entry point reads the real environment: unset flag (or anything but "true") fails closed.
+  const reportFile = path.join(dir, 'pool-run-report.json');
+  fs.writeFileSync(reportFile, JSON.stringify(outageReport));
+  assert.strictEqual(readRunReport(reportFile).total, 126);
+  assert.strictEqual(readRunReport(path.join(dir, 'missing.json')), null);
+  fs.writeFileSync(path.join(dir, 'garbage.json'), '{"total":"x"}');
+  assert.strictEqual(readRunReport(path.join(dir, 'garbage.json')), null);
+  const savedEnv = { ...process.env };
+  try {
+    process.env.POOL_RUN_REPORT = reportFile;
+    delete process.env.ALLOW_CARRY_FORWARD;
+    assert.throws(() => loadVerifiedPool(file, true), error => error.message === OLD_MESSAGE(file));
+    for (const value of ['TRUE', '1', 'yes', 'false', '']) {
+      process.env.ALLOW_CARRY_FORWARD = value;
+      assert.throws(() => loadVerifiedPool(file, true), error => error.message === OLD_MESSAGE(file), `ALLOW_CARRY_FORWARD=${value} must not enable carry-forward`);
+    }
+    process.env.ALLOW_CARRY_FORWARD = 'true';
+    const viaEnv = withCapturedLog(() => loadVerifiedPool(file, true, { today: TODAY, hasLocalImage: () => true })).value;
+    assert.strictEqual(viaEnv.evidence.tier, 'carry-forward', 'exact "true" plus an outage report enables it');
+  } finally {
+    for (const key of ['POOL_RUN_REPORT', 'ALLOW_CARRY_FORWARD']) {
+      if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
+    }
+  }
+
+  // Outage + flag but nothing qualifies: still fails closed, message keeps the old prefix.
+  write([product('B0EXPIRED6', evidence('2026-09-14')), product('B0NOEVID01')]);
+  assert.throws(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: outageReport }), error => error.message.startsWith(OLD_MESSAGE(file)) && /LOOKUP_OUTAGE/.test(error.message));
+
+  // Healthy Tier 1 run: identical to today. Only verified entries; evidence entries are ignored.
+  write([
+    product('B0VERIFIE1', { verification_status: 'verified', ...evidence(TODAY) }),
+    product('B0VERIFIE2', { verification_status: 'verified', ...evidence(TODAY) }),
+    product('B0FRESH001', evidence('2026-10-17')),
+  ]);
+  const healthyReport = buildRunReport([...repeat(live, 2), empty()]);
+  const healthyOn = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: healthyReport }));
+  const healthyOff = loadVerifiedPool(file, true, { ...base, allowCarryForward: false });
+  const healthyDefault = loadVerifiedPool(file, true);
+  assert.deepStrictEqual([...healthyOn.value.keys()], ['B0VERIFIE1', 'B0VERIFIE2']);
+  assert.deepStrictEqual([...healthyOff.keys()], [...healthyOn.value.keys()]);
+  assert.deepStrictEqual([...healthyDefault.keys()], [...healthyOn.value.keys()]);
+  assert.strictEqual(healthyOn.value.evidence.tier, 'tier-1');
+  assert.ok(!healthyOn.lines.some(line => /LOOKUP_OUTAGE/.test(line)), 'healthy run must not log an outage');
+
+  // Mixed outage (95 percent failing, a few LIVE): Tier 1 entries plus eligible carry-forward.
+  const mixedReport = buildRunReport([...repeat(live, 5), ...repeat(empty, 95)]);
+  const mixed = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: mixedReport })).value;
+  assert.deepStrictEqual([...mixed.keys()].sort(), ['B0FRESH001', 'B0VERIFIE1', 'B0VERIFIE2']);
+  assert.strictEqual(mixed.evidence.tier1, 2);
+  assert.strictEqual(mixed.evidence.carried, 1);
+
+  // Seed mode (verification not required) keeps loading everything except delisted entries.
+  write([product('B0SEEDMODE', {}), product('B0DELISTED', evidence('2026-10-17', { delisted_at: '2026-10-25' }))]);
+  assert.deepStrictEqual([...loadVerifiedPool(file, false).keys()], ['B0SEEDMODE']);
+  // A verified-but-delisted entry is never used either.
+  write([product('B0VERIFIE1', { verification_status: 'verified', delisted_at: '2026-10-25' })]);
+  assert.throws(() => loadVerifiedPool(file, true), error => error.message === OLD_MESSAGE(file));
+
+  // Unverified malformed/duplicate entries are skipped, not fatal, when verification is required (as before).
+  write([
+    product('B0VERIFIE1', { verification_status: 'verified' }),
+    { asin: 'bad', name: 'x', tags: [] },
+    product('B0VERIFIE1'),
+  ]);
+  assert.deepStrictEqual([...loadVerifiedPool(file, true).keys()], ['B0VERIFIE1']);
+  assert.throws(() => loadVerifiedPool(file, false), /Invalid pool ASIN|Duplicate pool ASIN/);
+}
+
+function realImagePath() {
+  const dirPath = path.join(ROOT, 'assets', 'product-images');
+  const name = fs.readdirSync(dirPath).find(entry => /\.(jpe?g|png|webp)$/i.test(entry));
+  return `assets/product-images/${name}`;
+}
+
+async function testCarryForwardGate() {
+  // The default local-image check: a real file under assets/product-images/ qualifies, a missing one does not.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outage-gate-'));
+  try {
+    const file = path.join(dir, 'pool.json');
+    fs.writeFileSync(file, JSON.stringify({ products: [
+      product('B0REALIMG1', { verification_source: 'creators_api', last_verified_at: '2026-10-17', image_local_path: realImagePath() }),
+      product('B0MISSING1', { verification_source: 'creators_api', last_verified_at: '2026-10-17', image_local_path: 'assets/product-images/does-not-exist.jpg' }),
+      product('B0OUTSIDE1', { verification_source: 'creators_api', last_verified_at: '2026-10-17', image_local_path: 'package.json' }),
+    ] }));
+    const pool = withCapturedLog(() => loadVerifiedPool(file, true, { allowCarryForward: true, today: TODAY, runReport: buildRunReport(repeat(empty, 50)) })).value;
+    assert.deepStrictEqual([...pool.keys()], ['B0REALIMG1']);
+
+    // validateBodyAsins: carry-forward ASINs skip the live lookup, still need a local image;
+    // Tier 1 ASINs still go to the verifier exactly as before.
+    const looked = [];
+    const verifier = { verifyAsin: async asin => { looked.push(asin); return { status: 'LIVE', source: 'creators_api', image_url: 'https://example.invalid/x.jpg', reason: '' }; } };
+    const box = asin => `<div class="product-box" data-asin="${asin}"><a href="https://www.amazon.com/dp/${asin}?tag=trailbuiltove-20">x</a></div>`;
+    const gatePool = new Map([
+      ['B0REALIMG1', pool.get('B0REALIMG1')],
+      ['B0MISSING1', product('B0MISSING1', { image_local_path: 'assets/product-images/does-not-exist.jpg' })],
+      ['B0TIERONE1', product('B0TIERONE1', { verification_status: 'verified' })],
+    ]);
+    const carryForwardAsins = new Set(['B0REALIMG1', 'B0MISSING1']);
+    const gate = await (async () => {
+      const original = console.log;
+      console.log = () => {};
+      try {
+        return await validateBodyAsins(box('B0REALIMG1') + box('B0MISSING1') + box('B0TIERONE1'), gatePool, verifier, { carryForwardAsins });
+      } finally {
+        console.log = original;
+      }
+    })();
+    assert.deepStrictEqual(looked, ['B0TIERONE1'], 'live lookup only for the Tier 1 ASIN');
+    assert.deepStrictEqual(gate.ok, ['B0REALIMG1', 'B0TIERONE1']);
+    assert.deepStrictEqual(gate.failed, ['B0MISSING1: carry-forward product has no local product image']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  // Tier outputs: Tier 1 writes only the tier; carry-forward adds the commit body with the evidence.
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'outage-out-'));
+  try {
+    const out = path.join(dir2, 'github-output');
+    const tierOne = new Map([['B0TIERONE1', product('B0TIERONE1')]]);
+    Object.defineProperty(tierOne, 'evidence', { value: { tier: 'tier-1', carriedAsins: new Set() } });
+    withCapturedLog(() => publishTierOutputs(tierOne, ['B0TIERONE1'], out));
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), 'evidence_tier=tier-1\n');
+    assert.strictEqual(tierCommitBody(tierOne, ['B0TIERONE1']), '');
+
+    fs.rmSync(out);
+    const carry = new Map([['B0CARRIED1', product('B0CARRIED1', { verification_source: 'published-history', last_verified_at: '2026-10-19' })]]);
+    Object.defineProperty(carry, 'evidence', { value: { tier: 'carry-forward', carriedAsins: new Set(['B0CARRIED1']) } });
+    withCapturedLog(() => publishTierOutputs(carry, ['B0CARRIED1'], out));
+    const written = fs.readFileSync(out, 'utf8');
+    assert.ok(written.startsWith('evidence_tier=carry-forward\ncommit_body<<TIER_BODY_EOF\n'));
+    assert.ok(written.includes('B0CARRIED1 last_verified_at=2026-10-19 source=published-history'));
+    assert.ok(!/chore: auto-publish/.test(written), 'the body must not carry the commit-subject prefix');
+  } finally {
+    fs.rmSync(dir2, { recursive: true, force: true });
+  }
+}
+
+async function testIssueSync() {
+  const secret = 'fake-client-secret-0123456789abcdefghijklmnop';
+  const credentials = { clientId: 'fake-client-id-value', clientSecret: secret, partnerTag: 'fake-tag-20' };
+  const outage = buildRunReport(repeat(empty, 126), { credentials, checkedAt: '2026-10-30T10:00:00.000Z' });
+  outage.sample.message = `HTTP 403: rejected ${secret} for fake-client-id-value Bearer abc.def.ghi user@example.com`;
+  const healthy = buildRunReport(repeat(live, 126), { credentials, checkedAt: '2026-10-31T10:00:00.000Z' });
+
+  const body = outageIssue.renderBody(outage, { credentials, runUrl: 'https://github.com/o/r/actions/runs/1', carryForwardEnabled: false });
+  for (const forbidden of [secret, 'fake-client-id-value', 'fake-tag-20', 'Bearer abc', 'user@example.com']) {
+    assert.ok(!body.includes(forbidden), `issue body must not contain ${forbidden}`);
+  }
+  assert.ok(body.includes('| Carry-forward enabled (ALLOW_CARRY_FORWARD) | no |'));
+  assert.ok(body.includes('| Failed: empty | 126 |'));
+
+  const originalFetch = global.fetch;
+  const calls = [];
+  let issues = [];
+  global.fetch = async (url, options) => {
+    const route = String(url).replace('https://api.github.com/repos/o/r', '');
+    const method = options.method;
+    const payload = options.body ? JSON.parse(options.body) : null;
+    calls.push({ method, route: route.split('?')[0], payload });
+    const respond = data => ({ ok: true, status: 200, text: async () => JSON.stringify(data) });
+    if (method === 'GET') return respond(issues);
+    if (method === 'POST' && route === '/issues') { issues = [{ number: 9, title: payload.title, state: 'open', body: payload.body }]; return respond({ number: 9 }); }
+    return respond({});
+  };
+  const ctx = { token: 'fake-token', repo: 'o/r' };
+  const writes = () => calls.filter(call => call.method !== 'GET').map(call => `${call.method} ${call.route}`);
+  try {
+    // Healthy run, no issue: nothing is written, nothing is created.
+    assert.deepStrictEqual(await outageIssue.sync(healthy, ctx, { credentials }), { action: 'none', verdict: PRODUCT });
+    assert.deepStrictEqual(writes(), []);
+
+    // Outage creates the issue (title, label), with a clean body.
+    calls.length = 0;
+    const created = await outageIssue.sync(outage, ctx, { credentials });
+    assert.deepStrictEqual(created, { action: 'created', number: 9, verdict: OUTAGE });
+    const create = calls.find(call => call.route === '/issues' && call.method === 'POST');
+    assert.strictEqual(create.payload.title, 'Amazon lookup outage');
+    assert.deepStrictEqual(create.payload.labels, ['lookup-outage']);
+    assert.ok(!JSON.stringify(calls).includes(secret));
+
+    // A second outage run updates the body in place, no comment.
+    calls.length = 0;
+    issues[0].title = 'Amazon lookup outage';
+    assert.strictEqual((await outageIssue.sync(outage, ctx, { credentials })).action, 'updated');
+    assert.deepStrictEqual(writes(), ['PATCH /issues/9']);
+
+    // Recovery: a comment, then close.
+    calls.length = 0;
+    assert.strictEqual((await outageIssue.sync(healthy, ctx, { credentials })).action, 'closed');
+    assert.deepStrictEqual(writes(), ['POST /issues/9/comments', 'PATCH /issues/9']);
+    assert.strictEqual(calls.find(call => call.method === 'PATCH').payload.state, 'closed');
+
+    // A new outage reopens a closed issue, with a comment first.
+    calls.length = 0;
+    issues[0].state = 'closed';
+    assert.strictEqual((await outageIssue.sync(outage, ctx, { credentials })).action, 'reopened');
+    assert.deepStrictEqual(writes(), ['POST /issues/9/comments', 'PATCH /issues/9']);
+
+    // No LIVE evidence (e.g. a product failure with zero LIVE) never closes an open issue.
+    calls.length = 0;
+    issues[0].state = 'open';
+    const noEvidence = buildRunReport(repeat(other, 5));
+    assert.strictEqual((await outageIssue.sync(noEvidence, ctx, { credentials })).action, 'none');
+    assert.deepStrictEqual(writes(), []);
+
+    // The eligibility issue shares the label but not the title: it is never touched.
+    calls.length = 0;
+    issues = [{ number: 3, title: 'Amazon API eligibility', state: 'open', body: 'x' }];
+    assert.strictEqual((await outageIssue.sync(outage, ctx, { credentials })).action, 'created');
+
+    // Dry run prints and writes nothing.
+    calls.length = 0;
+    const dry = await (async () => {
+      const original = console.log;
+      console.log = () => {};
+      try { return await outageIssue.sync(outage, ctx, { credentials, dryRun: true }); } finally { console.log = original; }
+    })();
+    assert.strictEqual(dry.action, 'dry-run');
+    assert.deepStrictEqual(calls, []);
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+function testWorkflowSwitches() {
+  const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'weekly-content.yml'), 'utf8');
+  // ALLOW_CARRY_FORWARD must not be set anywhere in the workflows (comments excluded).
+  for (const name of fs.readdirSync(path.join(ROOT, '.github', 'workflows'))) {
+    const text = fs.readFileSync(path.join(ROOT, '.github', 'workflows', name), 'utf8');
+    assert.ok(!/^\s*ALLOW_CARRY_FORWARD\s*:/m.test(text), `${name} must not set ALLOW_CARRY_FORWARD`);
+  }
+  assert.ok(/REQUIRE_POOL_VERIFICATION: 'true'/.test(workflow), 'REQUIRE_POOL_VERIFICATION must stay true');
+  assert.ok(/--run-report "\$RUNNER_TEMP\/pool-run-report\.json"/.test(workflow));
+  assert.ok(/git commit -m "chore: auto-publish \$\{ARTICLE\} on \$\(date \+%Y-%m-%d\)"/.test(workflow), 'commit subject must stay exact');
+  assert.ok(workflow.indexOf('Build runtime-verified product pool') < workflow.indexOf('Generate new article'), 'pool build runs before generation');
+  const netlify = fs.readFileSync(path.join(ROOT, 'netlify.toml'), 'utf8');
+  assert.ok(/ASIN_VALIDATE\s*=\s*"warn"/.test(netlify), 'ASIN_VALIDATE must stay warn');
+}
+
+async function run() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outage-tiers-'));
+  try {
+    testClassifier();
+    testLoader(dir);
+    await testCarryForwardGate();
+    await testIssueSync();
+    testWorkflowSwitches();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  console.log('Outage-tier tests passed: classifier, tier selection, fail-closed defaults, carry-forward gate, issue sync, workflow switches.');
+}
+
+run().catch(error => {
+  console.error(error);
+  process.exit(1);
+});
