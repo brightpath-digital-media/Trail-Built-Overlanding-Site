@@ -85,14 +85,41 @@ async function run() {
   ];
   const cleaned = mergeProducts({ seedProducts: [A, B, C, E].map(seed), priorProducts: corrupt, results: null, today: TODAY });
   const clean = asin => cleaned.find(product => product.asin === asin);
-  for (const field of ['last_verified_at', 'verification_source', 'delisted_at', 'image_local_path']) assert.strictEqual(clean(A)[field], undefined, `A ${field}`);
+  for (const field of ['last_verified_at', 'verification_source', 'image_local_path']) assert.strictEqual(clean(A)[field], undefined, `A ${field}`);
+  assert.strictEqual(clean(A).delisted_at, '2026-13-01', 'a malformed delisted_at is kept, never dropped');
   assert.strictEqual(clean(A).amazon_title, 'ok');
   for (const field of ['last_verified_at', 'verification_source', 'amazon_title', 'image_local_path']) assert.strictEqual(clean(B)[field], undefined, `B ${field}`);
-  for (const field of ['last_verified_at', 'verification_source', 'delisted_at']) assert.strictEqual(clean(C)[field], undefined, `C ${field}`);
+  for (const field of ['last_verified_at', 'verification_source']) assert.strictEqual(clean(C)[field], undefined, `C ${field}`);
+  assert.strictEqual(clean(C).delisted_at, 'soon');
   assert.deepStrictEqual(
     { source: clean(E).verification_source, date: clean(E).last_verified_at, flag: clean(E).delisted_at, title: clean(E).amazon_title, image: clean(E).image_local_path },
     { source: 'page-recheck', date: '2026-10-20', flag: '2026-10-21', title: 'Good', image: 'assets/product-images/e.jpg' }
   );
+  // Fail closed: any truthy delisted_at survives the merge exactly as written, so a hand-edited or
+  // malformed flag can never silently un-delist a product. Falsy values carry no flag.
+  for (const flag of ['2026-10-25T00:00:00Z', 'yes', true, '2026-10-25 ', ' 2026-10-25', '2026-02-30', 'delisted', 1]) {
+    const kept = mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), delisted_at: flag }], results: null, today: TODAY });
+    assert.deepStrictEqual(kept[0].delisted_at, flag, `delisted_at ${JSON.stringify(flag)} must survive`);
+    // ...even through a LIVE result and through the committable form.
+    const live = mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), delisted_at: flag }], results: new Map([[A, results.get(B)]]), today: TODAY });
+    assert.deepStrictEqual(live[0].delisted_at, flag);
+    assert.deepStrictEqual(persistedProducts(live)[0].delisted_at, flag);
+  }
+  for (const flag of ['', null, false, 0, undefined]) {
+    const none = mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), delisted_at: flag }], results: null, today: TODAY });
+    assert.strictEqual(none[0].delisted_at, undefined, `falsy ${JSON.stringify(flag)} is no flag`);
+  }
+  // Image paths: traversal after a valid prefix and other escapes are dropped.
+  for (const image of ['assets/product-images/../../x', 'assets/product-images/..', '../assets/product-images/x.jpg', 'assets/product-images/a b.jpg', 'assets/product-images\\x.jpg', 'assets/other/x.jpg', 42]) {
+    const out = mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), image_local_path: image }], results: null, today: TODAY });
+    assert.strictEqual(out[0].image_local_path, undefined, `image path ${JSON.stringify(image)} must be dropped`);
+  }
+  assert.strictEqual(mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), image_local_path: 'assets/product-images/ok-1.jpg' }], results: null, today: TODAY })[0].image_local_path, 'assets/product-images/ok-1.jpg');
+  // Titles: 500 characters is the limit; 501 is dropped.
+  const titled = length => mergeProducts({ seedProducts: [seed(A)], priorProducts: [{ ...seed(A), amazon_title: 'T'.repeat(length) }], results: null, today: TODAY })[0].amazon_title;
+  assert.strictEqual(titled(500), 'T'.repeat(500));
+  assert.strictEqual(titled(501), undefined);
+  assert.strictEqual(titled(0), undefined);
   assert.strictEqual(mod.isCalendarDate('2026-02-28'), true);
   assert.strictEqual(mod.isCalendarDate('2026-02-29'), false);
   assert.strictEqual(mod.isCalendarDate('2024-02-29'), true);
