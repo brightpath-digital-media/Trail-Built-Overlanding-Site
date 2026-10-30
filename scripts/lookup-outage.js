@@ -57,6 +57,8 @@ function classifyCounts(counts) {
 /** Summarize verifier results (array of { asin?, status, ... }) into a credential-free report. */
 function buildRunReport(results, { checkedAt = new Date().toISOString(), credentials = {} } = {}) {
   const failures = Object.fromEntries(FAILURE_KINDS.map(kind => [kind, 0]));
+  // ASIN -> failure kind for every failed lookup that names its ASIN. Kinds only: no messages.
+  const failedKinds = {};
   let live = 0;
   let sample = null;
   for (const result of results) {
@@ -66,6 +68,7 @@ function buildRunReport(results, { checkedAt = new Date().toISOString(), credent
       continue;
     }
     failures[kind]++;
+    if (/^[A-Z0-9]{10}$/.test(result.asin || '')) failedKinds[result.asin] = kind;
     if (!sample && SYSTEMIC_KINDS.includes(kind)) {
       sample = {
         kind,
@@ -81,6 +84,7 @@ function buildRunReport(results, { checkedAt = new Date().toISOString(), credent
     checked_at: checkedAt,
     ...counts,
     classification: classifyCounts(counts),
+    failed_kinds: failedKinds,
     sample,
   };
 }

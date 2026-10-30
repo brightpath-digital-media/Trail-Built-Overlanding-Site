@@ -319,7 +319,7 @@ async function main() {
     }
     results = await verifyProducts(seedProducts, createAsinVerifier({ credentials }));
     if (RUN_REPORT_FILE) {
-      const report = buildRunReport([...results.values()], { credentials });
+      const report = buildRunReport([...results].map(([asin, result]) => ({ ...result, asin })), { credentials });
       writeRunReport(RUN_REPORT_FILE, report);
       console.log(`[verified-pool] Lookup run: ${report.live} LIVE of ${report.total}; failures ${JSON.stringify(report.failures)}; ${report.classification}.`);
     }

@@ -177,9 +177,9 @@ jobs:
           REQUIRE_POOL_VERIFICATION: 'true'
           # The pool build's lookup summary; the loader classifies the run from it.
           POOL_RUN_REPORT: ${{ runner.temp }}/pool-run-report.json
-          # ALLOW_CARRY_FORWARD is deliberately NOT set here. Carry-forward (tier 2/3) is a
+          # Carry-forward (tier 2/3) is deliberately not enabled in any workflow. It is a
           # publishing-gate change that needs Kyle's explicit approval; until then a lookup
-          # outage fails closed exactly as before. To enable it, add: ALLOW_CARRY_FORWARD: 'true'
+          # outage fails closed exactly as before. The switch is described in the PR.
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/weekly-content-logs"
