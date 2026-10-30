@@ -75,6 +75,28 @@ async function run() {
   assert.strictEqual(byAsin[B].delisted_at, '2026-10-25');
   assert.strictEqual(byAsin[E].last_verified_at, TODAY);
 
+  // Evidence copied from the committed file is validated: bad dates, unknown sources, paths and
+  // titles are dropped rather than believed; a date without a known source loses both.
+  const corrupt = [
+    { ...seed(A), verification_source: 'creators_api', last_verified_at: '2026-02-30', amazon_title: 'ok', delisted_at: '2026-13-01', image_local_path: '../../etc/passwd' },
+    { ...seed(B), verification_source: 'manual', last_verified_at: '2026-10-17', amazon_title: 42, image_local_path: 'https://m.media-amazon.com/x.jpg' },
+    { ...seed(C), verification_source: 'creators_api', last_verified_at: 'yesterday', delisted_at: 'soon' },
+    { ...seed(E), verification_source: 'page-recheck', last_verified_at: '2026-10-20', delisted_at: '2026-10-21', amazon_title: 'Good', image_local_path: 'assets/product-images/e.jpg' },
+  ];
+  const cleaned = mergeProducts({ seedProducts: [A, B, C, E].map(seed), priorProducts: corrupt, results: null, today: TODAY });
+  const clean = asin => cleaned.find(product => product.asin === asin);
+  for (const field of ['last_verified_at', 'verification_source', 'delisted_at', 'image_local_path']) assert.strictEqual(clean(A)[field], undefined, `A ${field}`);
+  assert.strictEqual(clean(A).amazon_title, 'ok');
+  for (const field of ['last_verified_at', 'verification_source', 'amazon_title', 'image_local_path']) assert.strictEqual(clean(B)[field], undefined, `B ${field}`);
+  for (const field of ['last_verified_at', 'verification_source', 'delisted_at']) assert.strictEqual(clean(C)[field], undefined, `C ${field}`);
+  assert.deepStrictEqual(
+    { source: clean(E).verification_source, date: clean(E).last_verified_at, flag: clean(E).delisted_at, title: clean(E).amazon_title, image: clean(E).image_local_path },
+    { source: 'page-recheck', date: '2026-10-20', flag: '2026-10-21', title: 'Good', image: 'assets/product-images/e.jpg' }
+  );
+  assert.strictEqual(mod.isCalendarDate('2026-02-28'), true);
+  assert.strictEqual(mod.isCalendarDate('2026-02-29'), false);
+  assert.strictEqual(mod.isCalendarDate('2024-02-29'), true);
+
   // Without any lookup (static mode) evidence is carried and nothing becomes verified.
   const staticMerge = mergeProducts({ seedProducts, priorProducts: prior, results: null, today: TODAY });
   assert.ok(staticMerge.every(product => product.verification_status === 'pending-verification'));

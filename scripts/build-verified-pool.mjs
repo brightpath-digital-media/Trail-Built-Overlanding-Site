@@ -14,6 +14,8 @@
  *   - INCONCLUSIVE: prior last_verified_at / verification_source / amazon_title untouched;
  *                   never erased and never extended.
  *   - delisted_at is carried forward as is (only the page recheck sets or clears it).
+ *   - Carried evidence is validated first (real calendar date, known source, local image path);
+ *     an invalid field is dropped, never believed.
  *   - ASINs no longer referenced on the site are dropped.
  * verification_status keeps its meaning: 'verified' only for a LIVE result in this run.
  *
@@ -149,6 +151,38 @@ async function verifyProducts(products, verifier, log = console.log) {
   return results;
 }
 
+const KNOWN_SOURCES = new Set(['creators_api', 'published-history', 'page-recheck']);
+
+/** A real calendar date in YYYY-MM-DD form (2026-02-30 is rejected). */
+function isCalendarDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+}
+
+/**
+ * The evidence fields of a committed entry that are safe to carry forward. Evidence is
+ * all-or-nothing: a date needs a known source and a source needs a real date, so a
+ * hand-edited or corrupted entry loses its evidence instead of being believed.
+ * delisted_at, amazon_title and image_local_path are checked on their own.
+ */
+function validEvidence(before) {
+  const out = {};
+  if (isCalendarDate(before.last_verified_at) && KNOWN_SOURCES.has(before.verification_source)) {
+    out.verification_source = before.verification_source;
+    out.last_verified_at = before.last_verified_at;
+  }
+  if (typeof before.amazon_title === 'string' && before.amazon_title.trim() && before.amazon_title.length <= 500) {
+    out.amazon_title = before.amazon_title;
+  }
+  if (isCalendarDate(before.delisted_at)) out.delisted_at = before.delisted_at;
+  const image = before.image_local_path;
+  if (typeof image === 'string' && image.startsWith('assets/product-images/') && !image.includes('..') && !/[\s\\]/.test(image)) {
+    out.image_local_path = image;
+  }
+  return out;
+}
+
 /**
  * Merge the freshly extracted seed with prior committed evidence and (optionally) this run's
  * lookup results. Pure: no I/O. Output is sorted by ASIN with a fixed key order.
@@ -168,9 +202,7 @@ function mergeProducts({ seedProducts, priorProducts = [], results = null, today
         verification_status: 'pending-verification',
         sources: seed.sources,
       };
-      for (const field of EVIDENCE_FIELDS) {
-        if (before[field] !== undefined && before[field] !== '') merged[field] = before[field];
-      }
+      Object.assign(merged, validEvidence(before));
       const result = results && results.get(seed.asin);
       if (result && result.status === 'LIVE') {
         merged.verification_status = 'verified';
@@ -316,7 +348,10 @@ async function main() {
 }
 
 export {
+  KNOWN_SOURCES,
   buildPersistedDocument,
+  isCalendarDate,
+  validEvidence,
   chooseGeneratedAt,
   countLive,
   mergeProducts,
