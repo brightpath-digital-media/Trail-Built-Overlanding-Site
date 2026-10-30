@@ -1,0 +1,48 @@
+name: Amazon API Eligibility Probe
+
+# One Creators API lookup of one pool ASIN per day, using the repository's existing
+# Creators API secrets (no new credentials). The answer is written to a single public
+# issue, "Amazon API eligibility", so anyone can read it without log access. A comment
+# is posted only when the state changes. See scripts/amazon-eligibility-probe.js.
+
+on:
+  schedule:
+    - cron: '23 13 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: amazon-api-eligibility
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe Creators API eligibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Run probe tests
+        run: node scripts/test-amazon-eligibility-probe.js
+
+      - name: Probe Creators API eligibility
+        env:
+          CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
+          CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
+          AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+        run: node scripts/amazon-eligibility-probe.js --out "$RUNNER_TEMP/probe-result.json"
+
+      - name: Publish result to the eligibility issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/sync-eligibility-issue.js "$RUNNER_TEMP/probe-result.json"

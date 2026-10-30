@@ -114,6 +114,21 @@ jobs:
           fi
           echo "Creators API partner tag is configured."
 
+      # ── 3a. Informational eligibility probe (never blocks publishing) ─────────
+      - name: Probe Creators API eligibility (informational)
+        id: eligibility_probe
+        if: steps.check_published.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          CREATORS_API_CLIENT_ID: ${{ secrets.CREATORS_CREDENTIAL_ID }}
+          CREATORS_API_CLIENT_SECRET: ${{ secrets.CREATORS_CREDENTIAL_SECRET }}
+          CREATORS_API_PARTNER_TAG: ${{ secrets.CREATORS_API_PARTNER_TAG || secrets.PAAPI_PARTNER_TAG }}
+          AMAZON_ASSOCIATE_TAG: ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/amazon-eligibility-probe.js --out "$RUNNER_TEMP/probe-result.json"
+          node scripts/sync-eligibility-issue.js "$RUNNER_TEMP/probe-result.json"
+
       # ── 3b. Build runtime-verified product pool ───────────────────────────────
       - name: Build runtime-verified product pool
         id: build_verified_product_pool
