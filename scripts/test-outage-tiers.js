@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 
 const {
-  buildRunReport, classifyCounts, classifyRunReport, failureKind, readRunReport,
+  buildRunReport, classifyCounts, classifyRunReport, failureKind, otherFailuresAccounted, readRunReport,
 } = require('./lookup-outage');
 const { loadVerifiedPool, validateBodyAsins, tierCommitBody, publishTierOutputs } = require('./generate-article');
 const outageIssue = require('./sync-outage-issue');
@@ -229,6 +229,82 @@ function realImagePath() {
   return `assets/product-images/${name}`;
 }
 
+// N14: a report that counts product-specific failures but cannot say which ASINs they were is
+// not trusted for carry-forward at all (old-style or tampered report).
+function testUnaccountedFailuresFailClosed(dir) {
+  const file = path.join(dir, 'unaccounted-pool.json');
+  fs.writeFileSync(file, JSON.stringify({ products: [
+    product('B0OWNFAIL1', { verification_source: 'creators_api', last_verified_at: '2026-10-17' }),
+    product('B0FRESH001', { verification_source: 'creators_api', last_verified_at: '2026-10-17' }),
+  ] }));
+  const load = report => loadVerifiedPool(file, true, { allowCarryForward: true, today: TODAY, hasLocalImage: () => true, runReport: report });
+  const results = [...repeat(empty, 125), { ...other(), asin: 'B0OWNFAIL1' }].map((result, index) => (result.asin ? result : { ...result, asin: `B0FILL${String(index).padStart(5, '0')}` }));
+  const good = buildRunReport(results);
+  assert.strictEqual(good.failures.other, 1);
+  assert.strictEqual(classifyRunReport(good), OUTAGE);
+
+  // Intact report: carry-forward runs and the entry with its own failed lookup is excluded.
+  const ok = withCapturedLog(() => load(good)).value;
+  assert.deepStrictEqual([...ok.keys()], ['B0FRESH001']);
+  assert.strictEqual(ok.evidence.carryForwardSkippedReason, '');
+
+  const damaged = {
+    'failed_kinds absent (old-style report)': (() => { const report = { ...good }; delete report.failed_kinds; return report; })(),
+    'failed_kinds null': { ...good, failed_kinds: null },
+    'failed_kinds array': { ...good, failed_kinds: ['B0OWNFAIL1'] },
+    'failed_kinds string': { ...good, failed_kinds: 'B0OWNFAIL1' },
+    'failed_kinds array of other': { ...good, failed_kinds: ['other'] },
+    'failed_kinds number': { ...good, failed_kinds: 7 },
+    'failed_kinds empty object': { ...good, failed_kinds: {} },
+    'failed_kinds names no other': { ...good, failed_kinds: { B0OWNFAIL1: 'empty' } },
+    'failures.other undercounted by kinds': { ...good, failures: { ...good.failures, other: 3 }, failed_kinds: { B0OWNFAIL1: 'other' } },
+  };
+  for (const [name, report] of Object.entries(damaged)) {
+    const { lines } = withCapturedLog(() => {
+      assert.throws(() => load(report), error => error.message.startsWith(OLD_MESSAGE(file)) && /carry-forward skipped/.test(error.message), name);
+    });
+    assert.ok(lines.some(line => /carry-forward skipped, the run report counts/.test(line)), `${name}: the reason must be logged by name`);
+    assert.ok(!lines.some(line => /using carry-forward pool/.test(line)), `${name}: nothing may be carried`);
+    assert.strictEqual(otherFailuresAccounted(report).ok, false, name);
+  }
+  // Nothing product-specific to account for: an old-style report without kinds is still usable.
+  const noOther = buildRunReport(repeat(empty, 126));
+  delete noOther.failed_kinds;
+  assert.strictEqual(otherFailuresAccounted(noOther).ok, true);
+  assert.strictEqual(withCapturedLog(() => load(noOther)).value.size, 2);
+  // Extra kinds are fine; the exclusion still applies.
+  assert.strictEqual(otherFailuresAccounted({ ...good, failed_kinds: { ...good.failed_kinds, B0FRESH001: 'other' } }).ok, true);
+  // A tampered report can still not lower the count it must account for.
+  assert.strictEqual(otherFailuresAccounted({ failures: { other: 2 }, failed_kinds: { A: 'other', B: 'empty' } }).ok, false);
+}
+
+// R8: the production wiring in build-verified-pool.mjs attaches each ASIN to its verifier result
+// (the verifier's results do not carry one). Exercised from a Map exactly as main() builds it.
+async function testRunReportWiring(dir) {
+  const { reportFromResults, verifyProducts } = await import('./build-verified-pool.mjs');
+  const asins = Array.from({ length: 10 }, (_, index) => `B0WIRE000${index}`);
+  const scripted = new Map(asins.map((asin, index) => [asin, index === 3 ? other() : empty()]));
+  const verified = await verifyProducts(asins.map(asin => ({ asin })), { verifyAsin: async asin => scripted.get(asin) }, () => {});
+  assert.ok([...verified.values()].every(result => result.asin === undefined), 'verifier results carry no ASIN of their own');
+  const report = reportFromResults(verified);
+  assert.strictEqual(report.failed_kinds.B0WIRE0003, 'other');
+  assert.strictEqual(Object.keys(report.failed_kinds).length, 10);
+  assert.strictEqual(report.failures.other, 1);
+  assert.strictEqual(classifyRunReport(report), OUTAGE);
+  // End to end: the loader excludes exactly that ASIN.
+  const file = path.join(dir, 'wiring-pool.json');
+  fs.writeFileSync(file, JSON.stringify({ products: asins.map(asin => product(asin, { verification_source: 'creators_api', last_verified_at: '2026-10-17' })) }));
+  const pool = withCapturedLog(() => loadVerifiedPool(file, true, { allowCarryForward: true, today: TODAY, hasLocalImage: () => true, runReport: report })).value;
+  assert.ok(!pool.has('B0WIRE0003') && pool.size === 9);
+  assert.strictEqual(pool.evidence.excluded['own-lookup-failed'], 1);
+  // The production main() must route through the same function.
+  assert.ok(/const report = reportFromResults\(results, credentials\);/.test(fs.readFileSync(path.join(__dirname, 'build-verified-pool.mjs'), 'utf8')), 'main() must build the report with reportFromResults');
+  // Credentials are masked on this path too.
+  const secret = 'sk-live-0123456789abcdefghijklmnop';
+  const leaky = reportFromResults(new Map([['B0WIRE0001', { ...transport(), reason: `failed ${secret}` }]]), { clientId: secret, clientSecret: 'fake-secret-value', partnerTag: 'trailbuiltove-20' });
+  assert.ok(!JSON.stringify(leaky).includes(secret));
+}
+
 async function testCarryForwardGate() {
   // The default local-image check: a real file under assets/product-images/ qualifies, a missing one does not.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outage-gate-'));
@@ -434,6 +510,8 @@ async function run() {
   try {
     testClassifier();
     testLoader(dir);
+    testUnaccountedFailuresFailClosed(dir);
+    await testRunReportWiring(dir);
     await testCarryForwardGate();
     await testIssueSync();
     testWorkflowSwitches();
