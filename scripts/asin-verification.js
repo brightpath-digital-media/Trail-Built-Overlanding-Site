@@ -63,10 +63,59 @@ function parseJson(raw) {
   }
 }
 
-function apiReason(response) {
-  const body = parseJson(response.body);
+const MAX_DETAIL_CHARS = 200;
+
+const CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{2,39}$/;
+
+/**
+ * An error code is published, so it must look like an identifier and must not contain
+ * (or be) a credential. Anything else is dropped rather than shown.
+ */
+function safeCode(raw, credentials = {}) {
+  const cleaned = String(raw ?? '').split('#').pop().replace(/[^A-Za-z0-9_.:-]/g, '');
+  if (!CODE_PATTERN.test(cleaned)) return '';
+  return maskSecrets(cleaned, credentials) === cleaned ? cleaned : '';
+}
+
+/** First API error code in a response body (never credential material). */
+function apiErrorCode(payload, credentials = {}) {
+  const body = payload && typeof payload === 'object' ? payload : {};
   const firstError = Array.isArray(body.errors) ? body.errors[0] : null;
-  return firstError?.code || firstError?.message || body.code || body.error || `HTTP ${response.status}`;
+  const candidates = [
+    firstError?.reason, firstError?.code, firstError?.type,
+    body.reason, body.code, body.error, body.__type, body.type,
+  ];
+  for (const candidate of candidates) {
+    const code = safeCode(candidate, credentials);
+    if (code) return code;
+  }
+  return '';
+}
+
+/** Replace anything credential-shaped before a message is logged or published. */
+function maskSecrets(text, credentials = {}) {
+  let out = String(text ?? '');
+  for (const secret of [credentials.clientId, credentials.clientSecret, credentials.partnerTag]) {
+    if (secret && String(secret).length >= 4) out = out.split(String(secret)).join('[REDACTED]');
+  }
+  return out
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+    .replace(/[A-Za-z0-9._~+/=-]{32,}/g, '[REDACTED]')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[REDACTED]')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function apiMessage(payload, credentials) {
+  const body = payload && typeof payload === 'object' ? payload : {};
+  const firstError = Array.isArray(body.errors) ? body.errors[0] : null;
+  const raw = firstError?.message || body.message || body.error_description || '';
+  return maskSecrets(raw, credentials).slice(0, MAX_DETAIL_CHARS);
+}
+
+function apiReason(response, credentials = {}) {
+  const body = parseJson(response.body);
+  return apiErrorCode(body, credentials) || `HTTP ${response.status}`;
 }
 
 function createAsinVerifier({
@@ -94,8 +143,10 @@ function createAsinVerifier({
     const cacheToken = (response, generation) => {
       const payload = parseJson(response.body);
       if (response.status < 200 || response.status >= 300 || !payload.access_token) {
-        const error = new Error(`${generation} token exchange failed: ${apiReason(response)}`);
-        error.code = payload.error || '';
+        const error = new Error(`${generation} token exchange failed: ${apiReason(response, credentials)}`);
+        error.code = apiErrorCode(payload, credentials);
+        error.http_status = response.status;
+        error.stage = 'auth';
         throw error;
       }
       tokenCache = {
@@ -132,7 +183,11 @@ function createAsinVerifier({
         );
         return cacheToken(response, 'Cognito v2');
       } catch (v2Error) {
-        throw new Error(`Creators API authentication was inconclusive after LwA v3 and Cognito v2: ${v3Error.message}; ${v2Error.message}`);
+        const authError = new Error(`Creators API authentication was inconclusive after LwA v3 and Cognito v2: ${v3Error.message}; ${v2Error.message}`);
+        authError.code = v3Error.code || v2Error.code || '';
+        authError.http_status = v3Error.http_status || v2Error.http_status || 0;
+        authError.stage = 'auth';
+        throw authError;
       }
     }
   }
@@ -174,12 +229,21 @@ function createAsinVerifier({
         reason: '',
       };
     }
+    const ok = response.status >= 200 && response.status < 300;
+    const code = apiErrorCode(payload, credentials);
+    const detail = apiMessage(payload, credentials);
+    let reason;
+    if (response.status === 429) reason = 'Creators API throttled the lookup';
+    else if (ok) reason = 'No items returned';
+    else reason = `HTTP ${response.status}${code ? ` ${code}` : ''}${detail ? `: ${detail}` : ''}`.slice(0, MAX_DETAIL_CHARS + 80);
     return {
       status: 'INCONCLUSIVE',
       source: 'creators_api',
       title: '',
       image_url: '',
-      reason: response.status === 429 ? 'Creators API throttled the lookup' : (items.length === 0 ? 'No items returned' : apiReason(response)),
+      http_status: response.status,
+      error_code: response.status === 429 && !code ? 'TooManyRequests' : code,
+      reason,
     };
   }
 
@@ -188,7 +252,7 @@ function createAsinVerifier({
       return { status: 'INCONCLUSIVE', source: 'input', title: '', image_url: '', reason: 'Invalid ASIN format' };
     }
     if (!credentials.clientId || !credentials.clientSecret || !credentials.partnerTag) {
-      return { status: 'INCONCLUSIVE', source: 'creators_api', title: '', image_url: '', reason: 'Creators API credentials are unavailable' };
+      return { status: 'INCONCLUSIVE', source: 'creators_api', title: '', image_url: '', stage: 'auth', error_code: 'MissingCredentials', reason: 'Creators API credentials are unavailable' };
     }
 
     let lastResult = { status: 'INCONCLUSIVE', source: 'creators_api', title: '', image_url: '', reason: 'Creators API lookup unavailable' };
@@ -202,7 +266,10 @@ function createAsinVerifier({
           source: 'creators_api',
           title: '',
           image_url: '',
-          reason: `Creators API request failed: ${error.message}`,
+          stage: error.stage || '',
+          http_status: error.http_status || 0,
+          error_code: safeCode(error.code, credentials),
+          reason: `Creators API request failed: ${maskSecrets(error.message, credentials).slice(0, MAX_DETAIL_CHARS)}`,
         };
       }
       if (attempt < lookupAttempts) {
@@ -217,7 +284,10 @@ function createAsinVerifier({
 }
 
 module.exports = {
+  apiErrorCode,
   createAsinVerifier,
+  safeCode,
+  maskSecrets,
   getCreatorsCredentials,
   requestHttps,
 };
