@@ -430,7 +430,8 @@ function topicWords(topic) {
 
 function filterPoolForTopic(pool, topic) {
   const words = topicWords(topic);
-  const scored = [...pool.values()].map(product => {
+  // Products the monthly page recheck reported gone are never suggested to the model.
+  const scored = [...pool.values()].filter(product => !product.delisted_at).map(product => {
     const searchable = `${product.name} ${(product.tags || []).join(' ')}`.toLowerCase();
     const score = [...words].reduce((total, word) => total + (searchable.includes(word) ? 1 : 0), 0);
     return { product, score };

@@ -359,6 +359,7 @@ async function main() {
 }
 
 export {
+  EVIDENCE_FIELDS,
   KNOWN_SOURCES,
   buildPersistedDocument,
   isCalendarDate,
@@ -366,6 +367,7 @@ export {
   chooseGeneratedAt,
   countLive,
   mergeProducts,
+  orderKeys,
   persistWorkingFile,
   persistedProducts,
   reportFromResults,
