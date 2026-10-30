@@ -1,7 +1,7 @@
 name: Rotate Homepage Editor's Pick
 
 # Weekly rotation of the homepage Editor's Pick (PM->CODE #57 item 2). Runs Monday
-# 21:00 UTC (2:00 PM PT), after the Manus authoring task (~7:00 AM PT) and both
+# 21:00 UTC (about 2:00 PM PT), after the Manus authoring task (~7:00 AM PT) and both
 # weekly-content fallback runs, so a new article landed that day is already in the
 # newest four, and a week with no new article still rotates. Idempotent: a second run
 # in the same Monday-to-Sunday week changes nothing. See scripts/rotate-featured.js.
@@ -45,7 +45,8 @@ jobs:
           if git diff --cached --quiet; then
             echo "Editor's Pick unchanged — nothing to commit."
           else
-            git commit -m "chore: rotate homepage Editor's Pick (week of $(date -u -d 'last monday' +%Y-%m-%d))"
+            WEEK=$(grep -o 'editors-pick: week=[0-9-]*' index.html | head -1 | cut -d= -f2)
+            git commit -m "chore: rotate homepage Editor's Pick (week of ${WEEK})"
             git pull --rebase origin main
             git push origin main
           fi

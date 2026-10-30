@@ -45,8 +45,9 @@ function escapeHtml(text) {
 
 function decodeEntities(text) {
   return String(text)
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 }
 
 function humanDate(iso) {
@@ -61,10 +62,15 @@ function readArticle(slug) {
   const description = (html.match(/<meta name="description" content="([^"]*)"/) || [])[1] || "";
   const header = (html.match(/<div class="article-meta-top">([\s\S]*?)<\/div>/) || [])[1] || "";
   const badges = [...header.matchAll(/<span class="badge[^"]*">([^<]*)<\/span>/g)].map(m => m[1]).slice(0, 2);
-  // First product image that is a local repo file (relative "../assets/..." path that exists).
+  // First product image that is a local repo file (relative "../assets/..." path that exists),
+  // whatever the attribute order of the <img> tag.
   let image = null;
-  for (const m of html.matchAll(/<img src="\.\.\/(assets\/[^"]+)" alt="([^"]*)"/g)) {
-    if (fs.existsSync(path.join(ROOT, m[1]))) { image = { src: m[1], alt: m[2] }; break; }
+  for (const tag of html.matchAll(/<img\b[^>]*>/g)) {
+    const src = (tag[0].match(/\ssrc="\.\.\/(assets\/[^"]+)"/) || [])[1];
+    if (src && fs.existsSync(path.join(ROOT, src))) {
+      image = { src, alt: (tag[0].match(/\salt="([^"]*)"/) || [])[1] || "" };
+      break;
+    }
   }
   const words = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").split(/\s+/).filter(Boolean).length;
   return { slug, date, title, description, badges, image, wordCount: words };
@@ -103,7 +109,7 @@ function featuredBlock(html) {
 
 function currentPick(html) {
   const block = featuredBlock(html);
-  const markerMatch = html.slice(Math.max(0, block.start - 120), block.start).match(MARKER);
+  const markerMatch = html.slice(Math.max(0, block.start - 160), block.start).match(MARKER);
   const slug = (html.slice(block.start, block.end).match(/href="articles\/([^"?#]+)\.html"/) || [])[1] || "";
   return { slug, week: markerMatch ? markerMatch[1] : "", hasMarker: Boolean(markerMatch), block };
 }
@@ -143,7 +149,8 @@ function chooseSlug({ articles, topLatest, current, week, excludeCurrent }) {
     .filter(a => !excludeCurrent || a.slug !== current)
     .sort((a, b) => a.slug.localeCompare(b.slug));
   if (!eligible.length) return "";
-  return eligible[weekIndex(week) % eligible.length].slug;
+  const n = eligible.length;
+  return eligible[((weekIndex(week) % n) + n) % n].slug;
 }
 
 function rotate({ today, check }) {
@@ -158,13 +165,12 @@ function rotate({ today, check }) {
   const stillValid = current.week === week && current.slug !== topLatest && newestSlugs.includes(current.slug);
   if (stillValid) return { changed: false, slug: current.slug, week, reason: "already rotated this week" };
 
-  const slug = chooseSlug({ articles, topLatest, current: current.slug, week, excludeCurrent: true })
-    || chooseSlug({ articles, topLatest, current: current.slug, week, excludeCurrent: false });
-  if (!slug) return { changed: false, slug: current.slug, week, reason: "no eligible article (needs a local product image)" };
+  const slug = chooseSlug({ articles, topLatest, current: current.slug, week, excludeCurrent: true });
+  if (!slug) return { changed: false, slug: current.slug, week, reason: "no eligible article other than the current pick (needs a local product image)" };
 
   const article = articles.find(a => a.slug === slug);
   const marker = `<!-- editors-pick: week=${week} slug=${slug} -->\n`;
-  const before = html.slice(0, current.block.start).replace(/<!-- editors-pick: [^>]*-->\n?$/, "");
+  const before = html.slice(0, current.block.start).replace(/<!-- editors-pick: [^>]*-->\r?\n?$/, "");
   const next = `${before}${marker}${renderCard(article, cards)}${html.slice(current.block.end)}`;
   if (next === html) return { changed: false, slug, week, reason: "no change" };
   if (!check) fs.writeFileSync(INDEX_PATH, next);

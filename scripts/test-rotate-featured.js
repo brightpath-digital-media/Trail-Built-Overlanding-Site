@@ -13,10 +13,13 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const SCRIPT = path.join(__dirname, "rotate-featured.js");
+const { weekIndex, weekStart } = require("./rotate-featured");
 const REAL_ROOT = path.resolve(__dirname, "..");
 
-function article({ slug, date, title, badges = ["Gear", "Guide"], image = true, desc = "A guide & more." }) {
-  const img = image ? `<img src="../assets/product-images/${slug}.jpg" alt="Photo of ${title} &amp; kit" />` : "";
+function article({ slug, date, title, badges = ["Gear", "Guide"], image = true, altFirst = false, desc = "A guide & more." }) {
+  const alt = `Photo of ${title} &amp; kit`;
+  const src = `../assets/product-images/${slug}.jpg`;
+  const img = image ? (altFirst ? `<img alt="${alt}" decoding="async" src="${src}" />` : `<img src="${src}" alt="${alt}" />`) : "";
   return `<!doctype html><html><head><title>${title} | Trail Built</title><meta name="description" content="${desc}" />
 <script type="application/ld+json">{"datePublished":"${date}"}</script></head><body>
 <div class="article-meta-top">${badges.map((b, i) => `<span class="badge${i ? " badge-green" : ""}">${b}</span>`).join("")}<span class="card-date">x</span></div>
@@ -86,7 +89,8 @@ const snapshot = html;
 const second = run(dir, "2026-10-30");
 assert.strictEqual(fs.readFileSync(path.join(dir, "index.html"), "utf8"), snapshot, "same week: byte-identical");
 assert.ok(/already rotated this week/.test(second));
-assert.ok(/would rotate|already rotated/.test(run(dir, "2026-11-01", ["--check"])), "Sunday is still the same week");
+assert.ok(/already rotated this week/.test(run(dir, "2026-11-01", ["--check"])), "Sunday is still the same week");
+assert.ok(/would rotate/.test(run(dir, "2026-11-02", ["--check"])), "Monday starts a new week");
 
 // 3. Next week: a different article than last week's pick.
 run(dir, "2026-11-02");
@@ -100,7 +104,6 @@ const trio = [
   { slug: "c-two", date: "2026-09-28", title: "Two" },
   { slug: "d-three", date: "2026-09-21", title: "Three" },
 ];
-const { weekIndex, weekStart } = require("./rotate-featured");
 for (const date of ["2026-10-26", "2026-11-02", "2026-11-09"]) {
   const collides = ["b-one", "c-two", "d-three"][weekIndex(weekStart(date)) % 3];
   const t = tree(trio, { latest: trio.map(a => a.slug), pick: collides, pickWeek: "2026-01-05" });
@@ -108,6 +111,35 @@ for (const date of ["2026-10-26", "2026-11-02", "2026-11-09"]) {
   assert.notStrictEqual(pickOf(t), collides, `${date}: the formula's own choice is skipped when it is the current pick`);
   fs.rmSync(t, { recursive: true, force: true });
 }
+
+// 3c. Attribute order of the <img> tag does not matter (the fallback generator emits alt first).
+const altFirstArticles = articles.map(a => ({ ...a, altFirst: true }));
+const dirAlt = tree(altFirstArticles, { latest: altFirstArticles.map(a => a.slug), pick: "b-second" });
+run(dirAlt, "2026-10-26");
+assert.strictEqual(pickOf(dirAlt), "c-third", "alt-first images are recognised");
+assert.ok(fs.readFileSync(path.join(dirAlt, "index.html"), "utf8").includes('src="assets/product-images/c-third.jpg"'));
+
+// 3d. When the current pick is the only eligible article, nothing changes (never the same pick twice).
+const dirSolo = tree(
+  [articles[0], articles[1], { ...articles[2], image: false }, { ...articles[3], image: false }],
+  { latest: ["a-newest", "b-second", "c-third", "d-fourth-noimg"], pick: "b-second" }
+);
+const soloBefore = fs.readFileSync(path.join(dirSolo, "index.html"), "utf8");
+assert.ok(/no eligible article other than the current pick/.test(run(dirSolo, "2026-10-26")));
+assert.strictEqual(fs.readFileSync(path.join(dirSolo, "index.html"), "utf8"), soloBefore);
+
+// 3e. CRLF files: markers do not accumulate across weeks.
+const dirCrlf = tree(trio, { latest: trio.map(a => a.slug), pick: "b-one", pickWeek: "2026-01-05" });
+fs.writeFileSync(path.join(dirCrlf, "index.html"), fs.readFileSync(path.join(dirCrlf, "index.html"), "utf8").replace(/\n/g, "\r\n"));
+run(dirCrlf, "2026-10-26");
+run(dirCrlf, "2026-11-02");
+assert.strictEqual((fs.readFileSync(path.join(dirCrlf, "index.html"), "utf8").match(/editors-pick:/g) || []).length, 1, "exactly one marker on a CRLF file");
+
+// 3f. Year boundary: Thursday 2026-01-01 belongs to the week of 2025-12-29, and 2026-01-05 starts a new one.
+assert.strictEqual(weekStart("2026-01-01"), "2025-12-29");
+assert.strictEqual(weekStart("2026-01-04"), "2025-12-29");
+assert.strictEqual(weekStart("2026-01-05"), "2026-01-05");
+assert.ok(Number.isInteger(weekIndex("2023-06-05")), "dates before the epoch still index");
 
 // 4. A pick that has become the top Latest card is replaced even within its week.
 const dir2 = tree(
@@ -129,7 +161,9 @@ const before4 = fs.readFileSync(path.join(dir4, "index.html"), "utf8");
 assert.ok(/no eligible article/.test(run(dir4, "2026-10-26")));
 assert.strictEqual(fs.readFileSync(path.join(dir4, "index.html"), "utf8"), before4);
 
-// 7. The real site: copy index.html and articles/assets, rotate eight consecutive weeks.
+// 7. The real site (opt-in so a content change cannot block the weekly workflow): ROTATE_REAL_TREE=1.
+if (process.env.ROTATE_REAL_TREE === "1") {
+// copy index.html and articles/assets, rotate eight consecutive weeks.
 const real = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-real-"));
 fs.copyFileSync(path.join(REAL_ROOT, "index.html"), path.join(real, "index.html"));
 fs.cpSync(path.join(REAL_ROOT, "articles"), path.join(real, "articles"), { recursive: true });
@@ -147,6 +181,8 @@ for (let week = 0; week < 8; week++) {
 }
 const realHtml = fs.readFileSync(path.join(real, "index.html"), "utf8").split('<section id="reviews">')[0];
 assert.ok(!/src="https?:\/\//.test(realHtml.slice(realHtml.indexOf("card-featured"))), "real card image is local");
+fs.rmSync(real, { recursive: true, force: true });
+}
 
-for (const d of [dir, dir2, dir3, dir4, real]) fs.rmSync(d, { recursive: true, force: true });
-console.log("Rotate-featured tests passed: eligibility, local image, same-week idempotence, weekly change, top-card replacement, no-write check, real-site 8-week run.");
+for (const d of [dir, dir2, dir3, dir4, dirAlt, dirSolo, dirCrlf]) fs.rmSync(d, { recursive: true, force: true });
+console.log("Rotate-featured tests passed: eligibility, local image, same-week idempotence, weekly change, alt-first images, solo pick, CRLF, year boundary, top-card replacement, no-write check.");
