@@ -52,6 +52,11 @@ function testPlan(plan) {
   assert.ok(!asins.includes('B0FRESH001'));
   assert.strictEqual(result.due_total, 5);
   assert.strictEqual(buildPlan({ products: poolDocument().products, today: TODAY, limit: 2 }).count, 2);
+  // An impossible evidence date is no evidence, so the product is due; an impossible --today is an error.
+  const impossible = buildPlan({ products: [product('B0IMPOSS01', { verification_source: 'creators_api', last_verified_at: '2026-10-31' })], today: TODAY });
+  assert.strictEqual(impossible.count, 1, 'a future date is treated as unknown');
+  assert.strictEqual(buildPlan({ products: [product('B0IMPOSS02', { last_verified_at: '2026-02-30' })], today: '2026-03-01' }).items[0].last_verified_at, null);
+  assert.throws(() => buildPlan({ products: [], today: '2026-02-30' }), /Invalid --today/);
   assert.strictEqual(buildPlan({ products: poolDocument().products, today: TODAY, limit: 2 }).due_total, 5);
 
   const flagged = result.items.find(item => item.asin === 'B0FLAGGED1');
@@ -113,8 +118,15 @@ function testApply(apply, build) {
   const held = applyResults({ document: base, input: input([{ asin: 'B0OLDONE01', outcome: 'inconclusive', note: 'CAPTCHA shown' }, { asin: 'B0NEVER001', outcome: 'inconclusive', note: 'HTTP 503' }]), today: TODAY });
   assert.strictEqual(held.changed, false);
   assert.strictEqual(JSON.stringify(held.document), frozen, 'inconclusive must not change a byte of the pool');
-  assert.deepStrictEqual(held.report.held_out.map(item => item.asin), ['B0OLDONE01', 'B0NEVER001']);
+  assert.deepStrictEqual(held.report.inconclusive.map(item => item.asin), ['B0OLDONE01', 'B0NEVER001']);
   assert.strictEqual(held.document.generated_at, base.generated_at, 'generated_at moves only when content changes');
+
+  // Impossible calendar dates are rejected, not rolled over (2026-02-30 -> March 2).
+  for (const checkedAt of ['2026-02-30', '2026-09-31', '2026-02-30T10:00:00Z', '2026-13-01', '2026-00-10']) {
+    assert.throws(() => applyResults({ document: base, input: { checked_at: checkedAt, results: [{ asin: 'B0OLDONE01', outcome: 'pass' }] }, today: '2026-12-31' }), /checked_at must be an ISO date/, checkedAt);
+  }
+  assert.strictEqual(apply.checkDate('2024-02-29'), '2024-02-29');
+  assert.strictEqual(apply.checkDate('2026-02-29'), '');
 
   // A later pass clears a delisted flag; an older pass cannot.
   const back = applyResults({ document: base, input: input([{ asin: 'B0FLAGGED1', outcome: 'pass' }]), today: TODAY });
@@ -178,7 +190,7 @@ function testApply(apply, build) {
   assert.strictEqual(afterBuild.find(item => item.asin === 'B0EDGE3101').delisted_at, TODAY);
 }
 
-function testCli(dir) {
+function testCli(dir, apply) {
   const poolFile = path.join(dir, 'pool.json');
   const resultsFile = path.join(dir, 'results.json');
   const badFile = path.join(dir, 'bad.json');
@@ -191,7 +203,7 @@ function testCli(dir) {
   // Dry run by default.
   const dry = run(resultsFile);
   assert.match(dry, /dry run/);
-  assert.match(dry, /HELD OUT of new articles until a clear pass: 1 \(B0EDGE3101\)/);
+  assert.match(dry, /inconclusive: stays due, NOT excluded from articles \(hold-out is a follow-up\): 1 \(B0EDGE3101\)/);
   assert.strictEqual(fs.readFileSync(poolFile, 'utf8'), original);
 
   // A rejected file exits non-zero and writes nothing, even with --write.
@@ -199,16 +211,41 @@ function testCli(dir) {
   assert.strictEqual(fs.readFileSync(poolFile, 'utf8'), original);
 
   // --write applies: only the passed product changes, formatting is kept.
+  const inodeBefore = fs.statSync(poolFile).ino;
   run(resultsFile, '--write');
+  assert.notStrictEqual(fs.statSync(poolFile).ino, inodeBefore, 'the pool is replaced by rename, not rewritten in place');
   const written = JSON.parse(fs.readFileSync(poolFile, 'utf8'));
   assert.strictEqual(written.products.find(item => item.asin === 'B0OLDONE01').last_verified_at, TODAY);
   assert.strictEqual(written.products.find(item => item.asin === 'B0EDGE3101').last_verified_at, '2026-09-29');
   assert.ok(fs.readFileSync(poolFile, 'utf8').endsWith('}\n'));
   assert.deepStrictEqual(written.products.map(item => item.asin), poolDocument().products.map(item => item.asin), 'product order is preserved');
+  // --today is validated like the planner's: an invalid or impossible date is an error, nothing written.
+  for (const badToday of ['nope', '2026-02-30', '']) {
+    assert.throws(() => execFileSync(process.execPath, [path.join(__dirname, 'apply-page-recheck.mjs'), resultsFile, '--pool', poolFile, '--today', badToday], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), error => /Invalid --today date/.test(String(error.stderr)), `--today ${badToday}`);
+  }
+  assert.throws(() => execFileSync(process.execPath, [path.join(__dirname, 'page-recheck-plan.mjs'), '--pool', poolFile, '--today', '2026-02-30'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), error => /Invalid --today date/.test(String(error.stderr)));
   // Re-applying is a no-op on disk.
   const afterFirst = fs.readFileSync(poolFile, 'utf8');
   assert.match(run(resultsFile, '--write'), /No change to the pool file/);
   assert.strictEqual(fs.readFileSync(poolFile, 'utf8'), afterFirst);
+
+  // The write is atomic: no temp file is left behind, and a failed rename leaves the original intact.
+  assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
+  const atomicTarget = path.join(dir, 'atomic.json');
+  fs.writeFileSync(atomicTarget, 'ORIGINAL');
+  const missingDir = path.join(dir, 'no-such-dir', 'x.json');
+  assert.throws(() => apply.writeAtomically(missingDir, 'NEW'));
+  const atomicInode = fs.statSync(atomicTarget).ino;
+  apply.writeAtomically(atomicTarget, 'NEW\n');
+  assert.notStrictEqual(fs.statSync(atomicTarget).ino, atomicInode, 'rename replaces the file');
+  // A rename that fails (target is a directory) leaves no temp file behind.
+  const blocked = path.join(dir, 'blocked');
+  fs.mkdirSync(blocked);
+  assert.throws(() => apply.writeAtomically(blocked, 'X'));
+  assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
+  fs.rmdirSync(blocked);
+  assert.strictEqual(fs.readFileSync(atomicTarget, 'utf8'), 'NEW\n');
+  assert.deepStrictEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tmp')), []);
 
   // The plan CLI reads the same file and reflects the pass.
   const planOut = JSON.parse(execFileSync(process.execPath, [path.join(__dirname, 'page-recheck-plan.mjs'), '--pool', poolFile, '--today', TODAY], { encoding: 'utf8' }));
@@ -232,11 +269,15 @@ async function run() {
   try {
     testPlan(plan);
     testApply(apply, build);
-    testCli(dir);
+    testCli(dir, apply);
     testGeneratorFilter();
+    // No script output or doc may claim a hold-out the generator does not enforce.
+    for (const file of ['scripts/apply-page-recheck.mjs', 'docs/PAGE_RECHECK.md']) {
+      assert.ok(!/HELD OUT|held out of new articles|held_out/.test(fs.readFileSync(path.join(ROOT, file), 'utf8')), `${file} must not claim products are held out`);
+    }
     // The runbook exists and carries the warnings a cold reader needs.
     const runbook = fs.readFileSync(path.join(ROOT, 'docs', 'PAGE_RECHECK.md'), 'utf8');
-    for (const phrase of ['## Do not automate this from CI', 'Do not automate this check from GitHub Actions', 'CAPTCHA', 'node scripts/page-recheck-plan.mjs', 'node scripts/apply-page-recheck.mjs', '35 percent', 'inconclusive']) {
+    for (const phrase of ['NEVER solved or bypassed', 'No CAPTCHA-solving services, no proxies or IP rotation', 'stealth', 'commit it under `reports/page-recheck/`', 'Attach the results file to the pull request', 'one-time diff', 'NOT excluded from articles (hold-out is a follow-up)', '\\uXXXX', '## Do not automate this from CI', 'Do not automate this check from GitHub Actions', 'CAPTCHA', 'node scripts/page-recheck-plan.mjs', 'node scripts/apply-page-recheck.mjs', '35 percent', 'inconclusive']) {
       assert.ok(runbook.includes(phrase), `runbook must mention ${phrase}`);
     }
   } finally {

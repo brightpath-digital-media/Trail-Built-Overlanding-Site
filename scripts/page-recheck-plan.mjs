@@ -40,10 +40,12 @@ function significantWords(name) {
   return [...new Set(words)];
 }
 
+/** Day number of a real calendar date; 2026-02-30 and malformed input are NaN. */
 function dayNumber(isoDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate || '')) return NaN;
   const time = Date.parse(`${isoDate}T00:00:00Z`);
-  return Number.isFinite(time) ? Math.floor(time / 86400000) : NaN;
+  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== isoDate) return NaN;
+  return Math.floor(time / 86400000);
 }
 
 function utcToday(now = new Date()) {

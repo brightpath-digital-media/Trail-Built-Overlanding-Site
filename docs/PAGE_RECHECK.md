@@ -33,7 +33,9 @@ Do this once a month, or whenever someone asks for a recheck.
      2. a buying-options area shows (Add to Cart, Buy Now or See All Buying Options);
      3. no CAPTCHA, robot check, sign-in wall or error page appeared.
    - **fail-delisted** only if the page loaded normally (no CAPTCHA) and shows the product is gone: Amazon's page-not-found page, a "Currently unavailable" or "no longer available" notice with no buying options, or a title that clearly no longer matches the pool name. You must write a note saying exactly what you saw (at least 10 characters). This flag is reversible: a later pass clears it.
-   - **inconclusive** for everything else: a CAPTCHA or robot check, any HTTP error or timeout from a tool (403, 429, 5xx, any non-200), a blank or minimal page, a sign-in wall, or any doubt at all. Never guess. If a CAPTCHA appears, stop for the day rather than solving it repeatedly.
+   - **inconclusive** for everything else: a CAPTCHA or robot check, any HTTP error or timeout from a tool (403, 429, 5xx, any non-200), a blank or minimal page, a sign-in wall, or any doubt at all. Never guess. If a CAPTCHA appears, stop for the day (see the CAPTCHA rule below).
+
+   **CAPTCHA rule.** A CAPTCHA or robot check is NEVER solved or bypassed, by a person's tool, script, extension or agent. No CAPTCHA-solving services, no proxies or IP rotation, no stealth or fingerprint-spoofing browsers, no retry loops. Record the product as inconclusive and stop for the day.
 
 3. **Write the results file** (any name, for example `recheck-results.json`):
 
@@ -59,7 +61,9 @@ Do this once a month, or whenever someone asks for a recheck.
 
    One invalid entry (unknown ASIN, duplicate, bad outcome, fail-delisted without a note, a future date) rejects the whole file and changes nothing. Fix the file and run again.
 
-5. **Commit the change to `data/verified-products.json`** on a branch and open a pull request, as for any change to that file. Do not push to `main` directly.
+5. **Keep the evidence.** Attach the results file to the pull request, or commit it under `reports/page-recheck/` (for example `reports/page-recheck/2026-11-02.json`). The data file records the outcome but not the notes, so the results file is the only record of what was seen.
+
+6. **Commit the change to `data/verified-products.json`** on a branch and open a pull request, as for any change to that file. Do not push to `main` directly.
 
 ## What the data file records
 
@@ -67,12 +71,14 @@ Do this once a month, or whenever someone asks for a recheck.
 | --- | --- |
 | pass | `last_verified_at` = the check date, `verification_source` = `page-recheck`. A `delisted_at` flag is cleared if this check is not older than the flag. |
 | fail-delisted | `delisted_at` = the check date. The generator never uses a product with `delisted_at`. `last_verified_at` is left alone. |
-| inconclusive | **No change.** The product is printed as held out of new articles until a clear pass, and it stays on the next checklist. |
+| inconclusive | **No change.** Printed as "inconclusive: stays due, NOT excluded from articles (hold-out is a follow-up)". The product stays on the next checklist, but nothing stops the generator from using it meanwhile. |
 
 Rules the script enforces: it never sets `verification_status` (only a live Creators API run in CI can mark a product `verified`); it never adds a product; it never moves a date backwards (an older result than the current evidence is skipped as stale); notes are printed in the report but never written to the data file.
 
 ## Limits to know
 
+- The first `--write` re-serializes `data/verified-products.json` with standard JSON formatting. Characters that the file currently stores as `\uXXXX` escapes are written as the characters themselves, so the first write shows a one-time diff on those lines (the data is unchanged). Review it, then later writes are quiet.
+
 - In the carry-forward tier proposed in the evidence-tier pull request (off unless Kyle enables it), a `pass` counts only while the product stays within 45 days of `last_verified_at` and has a local image in `assets/product-images/`. The monthly cadence keeps it inside that window.
-- Holding out an inconclusive product is by report only: the data file has no field for it, so an inconclusive product with a still-fresh date remains usable until its date ages out. Enforcing the hold in the generator needs a data-field decision (listed as follow-up in the pull request).
+- Inconclusive products are NOT held out of articles (hold-out is a follow-up). It is by report and checklist only: the data file has no field for it, so an inconclusive product with a still-fresh date remains usable until its date ages out. Enforcing the hold in the generator needs a data-field decision (listed as follow-up in the pull request).
 - With no live price lookup, a product that Amazon removes is caught by this monthly check, not at publish time.

@@ -9,8 +9,9 @@
  *                 Clears delisted_at when this check is not older than the flag (the product is back).
  *   fail-delisted delisted_at = checked_at date (the earlier date is kept if already flagged).
  *                 last_verified_at is left alone: history is never rewritten.
- *   inconclusive  no change at all. The product is reported as HELD OUT of new articles until a
- *                 clear pass, and stays on the due list in page-recheck-plan.mjs.
+ *   inconclusive  no change at all. Reported as "inconclusive: stays due, NOT excluded from
+ *                 articles (hold-out is a follow-up)": the product stays on the due list in
+ *                 page-recheck-plan.mjs, but nothing stops the generator from using it.
  *
  * This script never sets verification_status (a page check is not a Tier 1 lookup), never adds a
  * product, and never moves an evidence date backwards: a result older than the product's current
@@ -20,7 +21,7 @@
  * Usage: node scripts/apply-page-recheck.mjs results.json [--pool file] [--write] [--today YYYY-MM-DD]
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { orderKeys } from './build-verified-pool.mjs';
@@ -35,10 +36,16 @@ function cleanNote(value) {
   return String(value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE_CHARS);
 }
 
-/** UTC YYYY-MM-DD of an ISO date or datetime, or '' when it is not one. */
+/**
+ * UTC YYYY-MM-DD of an ISO date or datetime, or '' when it is not one. Impossible calendar
+ * dates (2026-02-30) are rejected rather than rolled over.
+ */
 function checkDate(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(value.trim())) return '';
-  const time = Date.parse(value.trim().length === 10 ? `${value.trim()}T00:00:00Z` : value.trim());
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  const match = /^(\d{4}-\d{2}-\d{2})(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/.exec(text);
+  if (!match || !Number.isFinite(dayNumber(match[1]))) return '';
+  const time = Date.parse(text.length === 10 ? `${text}T00:00:00Z` : text);
   return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : '';
 }
 
@@ -76,7 +83,7 @@ function applyResults({ document, input, today, now = new Date().toISOString() }
   const byAsin = new Map(products.map(product => [product.asin, product]));
   const { date, entries } = validateResults(input, new Set(byAsin.keys()), today);
   const next = new Map(products.map(product => [product.asin, { ...product }]));
-  const report = { checked_at: date, passed: [], cleared_delisted: [], delisted: [], held_out: [], skipped: [] };
+  const report = { checked_at: date, passed: [], cleared_delisted: [], delisted: [], inconclusive: [], skipped: [] };
   let changed = false;
 
   for (const { asin, outcome, note } of entries) {
@@ -84,7 +91,7 @@ function applyResults({ document, input, today, now = new Date().toISOString() }
     const name = product.name;
     const evidence = product.last_verified_at;
     if (outcome === 'inconclusive') {
-      report.held_out.push({ asin, name, note });
+      report.inconclusive.push({ asin, name, note });
       continue;
     }
     // Never move evidence backwards: an older result cannot override a newer one.
@@ -121,15 +128,26 @@ function applyResults({ document, input, today, now = new Date().toISOString() }
   return { document: nextDocument, changed, report };
 }
 
+/** Temp file in the same directory, then rename: a crash never leaves a half-written pool. */
+function writeAtomically(file, text) {
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, text, 'utf8');
+    renameSync(temp, file);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
 function printReport(report, write) {
   const line = (label, items) => console.log(`[page-recheck] ${label}: ${items.length}${items.length ? ` (${items.map(item => item.asin).join(', ')})` : ''}`);
   console.log(`[page-recheck] checked_at ${report.checked_at}${write ? '' : ' (dry run, pass --write to apply)'}`);
   line('pass', report.passed);
   line('delisted flag cleared', report.cleared_delisted);
   line('fail-delisted', report.delisted);
-  line('HELD OUT of new articles until a clear pass', report.held_out);
+  line('inconclusive: stays due, NOT excluded from articles (hold-out is a follow-up)', report.inconclusive);
   line('skipped', report.skipped);
-  for (const item of report.held_out) console.log(`  held out ${item.asin} ${item.name}: ${item.note || 'no note'}`);
+  for (const item of report.inconclusive) console.log(`  inconclusive ${item.asin} ${item.name}: ${item.note || 'no note'}`);
   for (const item of report.skipped) console.log(`  skipped ${item.asin}: ${item.reason}`);
 }
 
@@ -142,10 +160,12 @@ function main(args = process.argv.slice(2)) {
   const write = args.includes('--write');
   const document = JSON.parse(readFileSync(poolFile, 'utf8'));
   const input = JSON.parse(readFileSync(resultsFile, 'utf8'));
-  const outcome = applyResults({ document, input, today: option('--today', utcToday()) });
+  const today = option('--today', utcToday());
+  if (!Number.isFinite(dayNumber(today))) throw new Error(`Invalid --today date: ${today}`);
+  const outcome = applyResults({ document, input, today });
   printReport(outcome.report, write);
   if (write && outcome.changed) {
-    writeFileSync(poolFile, `${JSON.stringify(outcome.document, null, 2)}\n`, 'utf8');
+    writeAtomically(poolFile, `${JSON.stringify(outcome.document, null, 2)}\n`);
     console.log(`[page-recheck] Updated ${path.relative(process.cwd(), poolFile)}.`);
   } else if (write) {
     console.log('[page-recheck] No change to the pool file.');
@@ -153,7 +173,7 @@ function main(args = process.argv.slice(2)) {
   return outcome;
 }
 
-export { applyResults, checkDate, validateResults };
+export { applyResults, checkDate, validateResults, writeAtomically };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
