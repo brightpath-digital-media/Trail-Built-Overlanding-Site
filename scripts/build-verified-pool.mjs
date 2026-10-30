@@ -304,10 +304,12 @@ async function main() {
 }
 
 export {
+  EVIDENCE_FIELDS,
   buildPersistedDocument,
   chooseGeneratedAt,
   countLive,
   mergeProducts,
+  orderKeys,
   persistWorkingFile,
   persistedProducts,
   verifyProducts,
