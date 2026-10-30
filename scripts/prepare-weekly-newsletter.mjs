@@ -56,6 +56,11 @@ const ARCHIVE_MAX_SENTENCE = 300;
 const ARCHIVE_SUBJECT_PREFIX = "From the archive:";
 // Anything that would be a new commerce claim. Applied to the final rendered HTML.
 const ARCHIVE_FORBIDDEN = /\$|price|offers|amazon\.com|amzn\.to|media-amazon|in stock/i;
+// Wider list, applied only to the text we copy in (title, sentence, alt text, URLs);
+// the HTML shell legitimately contains "100%" and similar.
+const ARCHIVE_FORBIDDEN_CONTENT = /%|\b(?:rated|stars?|deals?|coupons?|discount(?:s|ed)?|cheap(?:er|est)?|lowest|sales?|usd)\b|tag=|utm_/i;
+// A pick's editors-pick marker week must be this close to the staging date.
+const ARCHIVE_MARKER_MAX_DAYS = 7;
 
 function fail(step, message) {
   throw new Error(`${step}: ${message}`);
@@ -93,6 +98,23 @@ function metaContent(html, expectedAttribute, expectedValue) {
     const tag = match[0];
     if (attr(tag, expectedAttribute).toLowerCase() === expectedValue.toLowerCase()) {
       return attr(tag, "content");
+    }
+  }
+  return "";
+}
+
+// Archive path only. attr() stops at the first quote of either kind, so a double-quoted
+// value containing an apostrophe is cut short. These helpers honor the opening delimiter.
+// The normal path keeps using attr()/metaContent() so its output stays byte-identical.
+function quotedAttr(tag, name) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  return match ? decodeHtml(match[1] ?? match[2]) : "";
+}
+
+function quotedMetaContent(html, expectedAttribute, expectedValue) {
+  for (const match of html.matchAll(/<meta\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    if (quotedAttr(match[0], expectedAttribute).toLowerCase() === expectedValue.toLowerCase()) {
+      return quotedAttr(match[0], "content");
     }
   }
   return "";
@@ -257,6 +279,10 @@ async function findNewestArticle() {
 
 // NEWSLETTER-0918: "the newest stem is one we already sent" and "authoring has
 // produced nothing for two weeks" used to look identical and both exit 0.
+function archiveStallSummary(article, age, stem) {
+  return `${config.siteName}: the newest article is "${article.title}" (${article.source}), published ${article.publishedDate} — ${age} days old against a ${STALL_AFTER_DAYS}-day threshold. Nothing newer exists in the article corpus, so at least two weekly authoring cycles produced nothing. Archive issue staged instead (${stem}); weekly authoring is still broken.`.replace(/\s+/g, " ");
+}
+
 async function reportStall(article, age, archiveBlock = null) {
   const summary = `${config.siteName}: the newest article is "${article.title}" (${article.source}), published ${article.publishedDate} — ${age} days old against a ${STALL_AFTER_DAYS}-day threshold. Nothing newer exists in the article corpus, so at least two weekly authoring cycles produced nothing. This is an authoring/content-pipeline failure, not a week with nothing new to send; no newsletter was staged.${archiveBlock ? ` Archive issue not staged (ARCHIVE_BLOCKED:${archiveBlock.reason}): ${archiveBlock.detail}` : ""}`.replace(/\s+/g, " ");
   if (process.env.GITHUB_OUTPUT) {
@@ -314,8 +340,8 @@ function readEditorsPick(indexHtml) {
     markerSlug: marker ? marker[2] : "",
     markerWeek: marker ? marker[1] : "",
     linkSlug,
-    imageSrc: img ? attr(img, "src") : "",
-    imageAlt: img ? attr(img, "alt") : "",
+    imageSrc: img ? quotedAttr(img, "src") : "",
+    imageAlt: img ? quotedAttr(img, "alt") : "",
   };
 }
 
@@ -336,8 +362,14 @@ async function readStagedRecord(outputDirectory) {
   }
   const records = [];
   for (const stem of stems) {
-    const match = stem.match(/^(\d{4}-\d{2}-\d{2})-(archive-)?(.+)$/);
-    if (match) records.push({ stem, date: match[1], archive: Boolean(match[2]), slug: match[3] });
+    const match = stem.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
+    if (!match) continue;
+    // `<date>-archive-foo` is an archive stem for `foo`, but it is also exactly what a
+    // normal stem for an article whose slug is `archive-foo` looks like. Treat it as an
+    // archive stem for the 14-day/consecutive-week guards (conservative) and let both
+    // readings count for the duplicate and last-sent checks.
+    const archive = match[2].startsWith("archive-");
+    records.push({ stem, date: match[1], archive, slugs: archive ? [match[2].slice("archive-".length), match[2]] : [match[2]] });
   }
   return records;
 }
@@ -387,14 +419,20 @@ async function chooseArchiveIssue({ today, outputDirectory }) {
     return archiveBlocked("editors-pick-inconsistent", `the editors-pick marker names ${pick.markerSlug} but the featured card links ${pick.linkSlug}.`);
   }
 
+  // Guard: a marker older (or newer) than a week means the rotation did not run for this
+  // week, so the pick is not this week's. No marker at all cannot be checked and is allowed.
+  if (pick.markerWeek && Math.abs(ageInDays(pick.markerWeek, today)) > ARCHIVE_MARKER_MAX_DAYS) {
+    return archiveBlocked("editors-pick-stale-marker", `the editors-pick marker week ${pick.markerWeek} is more than ${ARCHIVE_MARKER_MAX_DAYS} days from ${today}.`);
+  }
+
   // Guard: the pick must not be the article of the most recent staged/sent stem.
   const newestDate = records.map((record) => record.date).sort().pop();
-  const latest = records.find((record) => record.date === newestDate && record.slug === slug);
+  const latest = records.find((record) => record.date === newestDate && record.slugs.includes(slug));
   if (latest) {
     return archiveBlocked("editors-pick-is-last-sent", `the Editor's Pick ${slug} is the article of the most recent staged stem ${latest.stem}.`);
   }
   // Guard: never when any stem (archive or normal) for that article already exists.
-  const existing = records.find((record) => record.slug === slug);
+  const existing = records.find((record) => record.slugs.includes(slug));
   if (existing) {
     return archiveBlocked("editors-pick-already-issued", `a stem for ${slug} already exists (${existing.stem}).`);
   }
@@ -417,7 +455,11 @@ async function chooseArchiveIssue({ today, outputDirectory }) {
   }
 
   const articleHtml = await fs.readFile(path.join(articlesDirectory, `${slug}.html`), "utf8");
-  const description = stripHtml(metaContent(articleHtml, "name", "description"));
+  // Quote-aware re-read of the title and description: parseArticleFile() uses attr(),
+  // which cuts a double-quoted value at its first apostrophe.
+  const jsonLd = firstJsonLdObject(articleHtml);
+  const title = stripHtml(jsonLd.headline || jsonLd.name || quotedMetaContent(articleHtml, "property", "og:title"));
+  const description = stripHtml(quotedMetaContent(articleHtml, "name", "description"));
   // One sentence: up to the first period or exclamation mark (a leading question stays
   // attached to its answer), not the whole paragraph.
   const sentence = (description.match(/^.*?[.!](?=\s|$)/)?.[0] ?? description).trim();
@@ -426,7 +468,7 @@ async function chooseArchiveIssue({ today, outputDirectory }) {
   }
 
   const issue = {
-    article: { ...article, excerpt: sentence },
+    article: { ...article, title: title || article.title, excerpt: sentence },
     stem: `${today}-archive-${slug}`,
     imageUrl: `https://${config.domain}/${src}`,
     imageAlt: pick.imageAlt,
@@ -435,14 +477,15 @@ async function chooseArchiveIssue({ today, outputDirectory }) {
   issue.subject = `${ARCHIVE_SUBJECT_PREFIX} ${issue.article.title}`;
   issue.html = renderHtml(issue.article, { eyebrow: "From the archive", imageUrl: issue.imageUrl, imageAlt: issue.imageAlt });
   // The subject is only the fixed prefix plus the title, which is in the rendered HTML.
-  if (ARCHIVE_FORBIDDEN.test(issue.html)) {
-    return archiveBlocked("editors-pick-unsafe-content", `the rendered archive issue for ${slug} contains a price, offer, stock or retailer-link term.`);
+  const copied = [issue.article.title, sentence, issue.imageAlt, issue.article.url, issue.imageUrl].join("\n");
+  if (ARCHIVE_FORBIDDEN.test(issue.html) || ARCHIVE_FORBIDDEN_CONTENT.test(copied)) {
+    return archiveBlocked("editors-pick-unsafe-content", `the rendered archive issue for ${slug} contains a price, offer, deal, rating, stock, tracking or retailer-link term.`);
   }
   return { ok: true, issue };
 }
 
 // Shared by the normal and archive paths: write, optionally commit, report.
-async function writeStagedIssue({ outputDirectory, htmlPath, metaPath, html, metadata, article, commitMessage }) {
+async function writeStagedIssue({ outputDirectory, htmlPath, metaPath, html, metadata, article, commitMessage, resultExtra = {} }) {
   await fs.mkdir(outputDirectory, { recursive: true });
   await fs.writeFile(htmlPath, html, "utf8");
   await fs.writeFile(metaPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
@@ -463,6 +506,7 @@ async function writeStagedIssue({ outputDirectory, htmlPath, metaPath, html, met
     htmlPath: path.relative(root, htmlPath),
     metaPath: path.relative(root, metaPath),
     ...metadata,
+    ...resultExtra,
   });
 }
 
@@ -491,8 +535,16 @@ async function main() {
       const archiveHtmlPath = path.join(outputDirectory, `${issue.stem}.html`);
       const archiveMetaPath = path.join(outputDirectory, `${issue.stem}.meta.json`);
       console.log(`ARCHIVE_ISSUE: newest article ${article.slug} is ${age} days old; staging the Editor's Pick ${issue.article.slug} as an archive issue.`);
+      // The corpus being stalled must stay visible even though the job now succeeds, so a
+      // later workflow step can alert on it. Only when the stall threshold is exceeded.
+      const stalled = age > STALL_AFTER_DAYS;
+      const stallSummary = stalled ? archiveStallSummary(article, age, issue.stem) : "";
       if (process.env.GITHUB_OUTPUT) {
-        await fs.appendFile(process.env.GITHUB_OUTPUT, "newsletter_archive=true\n", "utf8");
+        await fs.appendFile(
+          process.env.GITHUB_OUTPUT,
+          `newsletter_archive=true\n${stalled ? `newsletter_stalled=true\nnewsletter_stall_summary=${stallSummary}\n` : ""}`,
+          "utf8",
+        );
       }
       await writeStagedIssue({
         outputDirectory,
@@ -501,6 +553,7 @@ async function main() {
         html: issue.html,
         article: issue.article,
         commitMessage: `chore: stage archive newsletter ${issue.article.slug} ${today}`,
+        resultExtra: stalled ? { stalled: true, ageDays: age, thresholdDays: STALL_AFTER_DAYS, stallSummary, newestArticle: article } : {},
         metadata: {
           suggestedSubject: issue.subject,
           previewText: issue.article.excerpt.slice(0, 160),

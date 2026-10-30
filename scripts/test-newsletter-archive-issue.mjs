@@ -40,12 +40,12 @@ const DOMAIN = "https://trailbuiltoverland.com";
 
 const DESCRIPTION = "Ground tent or rooftop tent for overlanding? Compare setup, roof load, space and weather trade-offs.";
 
-function articlePage({ slug, title, publishDate, description = DESCRIPTION }) {
+function articlePage({ slug, title, publishDate, description = DESCRIPTION, ogTitleOnly = false }) {
   const url = `${DOMAIN}/articles/${slug}.html`;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
-    headline: title,
+    ...(ogTitleOnly ? {} : { headline: title }),
     description,
     image: { "@type": "ImageObject", url: "https://images.example.com/hero.jpg" },
     datePublished: publishDate,
@@ -282,7 +282,14 @@ function assertBlockedLikeToday(outcome, ctx, reason, { stalled = true } = {}) {
   assert.match(outcome.stdout, /SUBJECT: From the archive: Ground Tents vs Rooftop Tents/);
   assert.match(outcome.githubOutput, /newsletter_prepared=true/);
   assert.match(outcome.githubOutput, /newsletter_archive=true/);
-  assert.doesNotMatch(outcome.githubOutput, /newsletter_stalled/);
+  // Stalled corpus stays visible to a future workflow step even though the job succeeds.
+  assert.match(outcome.githubOutput, /newsletter_stalled=true/);
+  assert.match(outcome.githubOutput, /newsletter_stall_summary=.*15 days old.*Archive issue staged instead \(2026-11-03-archive-ground-vs-rooftop-tents\)/);
+  const result = JSON.parse(outcome.result);
+  assert.equal(result.status, "prepared");
+  assert.equal(result.stalled, true);
+  assert.equal(result.ageDays, 15);
+  assert.match(result.stallSummary, /Archive issue staged instead/);
 
   const meta = JSON.parse(outcome.files[`${stem}.meta.json`]);
   assert.equal(meta.suggestedSubject, "From the archive: Ground Tents vs Rooftop Tents");
@@ -326,6 +333,9 @@ function assertBlockedLikeToday(outcome, ctx, reason, { stalled = true } = {}) {
   const outcome = execute(ctx, { env: ON });
   assert.equal(outcome.status, 0, outcome.stderr);
   assert.ok(outcome.staged.includes(`${TODAY}-archive-${PICK.slug}.html`));
+  // Not past the stall threshold, so nothing is flagged as stalled.
+  assert.doesNotMatch(outcome.githubOutput, /newsletter_stalled|newsletter_stall_summary/);
+  assert.equal(JSON.parse(outcome.result).stalled, undefined);
   console.log("PASS flag on + no new article this week (9-14 days) also stages the archive issue");
 }
 
@@ -468,6 +478,112 @@ function assertBlockedLikeToday(outcome, ctx, reason, { stalled = true } = {}) {
   assert.ok(html.includes(DESCRIPTION));
   assert.ok(!html.includes("Second sentence"));
   console.log("PASS only the first meta sentence is used");
+}
+
+// F1: `<date>-archive-foo` is also what a NORMAL stem for an article slugged `archive-foo` looks like.
+{
+  const ARCHIVE_FOO = { slug: "archive-foo", title: "Archive Foo Guide", publishDate: "2026-10-01" };
+  const dup = setup(
+    archiveSetup({ articles: [NEWEST, ARCHIVE_FOO, OTHER], preStage: [NORMAL_STEM, "2026-10-02-archive-foo"], index: { slug: "archive-foo", marker: { week: "2026-11-02", slug: "archive-foo" } } }),
+  );
+  assertBlockedLikeToday(execute(dup, { env: ON }), dup, "editors-pick-already-issued");
+
+  // The same stem is also the archive stem of article `foo`: a pick of `foo` is blocked too.
+  const FOO = { slug: "foo", title: "Foo Guide", publishDate: "2026-10-01" };
+  const reverse = setup(archiveSetup({ articles: [NEWEST, FOO, OTHER], preStage: [NORMAL_STEM, "2026-10-02-archive-foo"], index: { slug: "foo", marker: { week: "2026-11-02", slug: "foo" } } }));
+  assertBlockedLikeToday(execute(reverse, { env: ON }), reverse, "editors-pick-already-issued");
+
+  // And as the most recent stem it is "last sent" under either reading.
+  const latest = setup(
+    archiveSetup({ articles: [NEWEST, ARCHIVE_FOO, OTHER], preStage: [NORMAL_STEM, "2026-10-20-archive-foo"], index: { slug: "archive-foo", marker: { week: "2026-11-02", slug: "archive-foo" } } }),
+  );
+  assertBlockedLikeToday(execute(latest, { env: ON }), latest, "editors-pick-is-last-sent");
+
+  // With no such stem present, the same pick is allowed (the block comes from the stem, not the name).
+  const clean = setup(archiveSetup({ articles: [NEWEST, ARCHIVE_FOO, OTHER], index: { slug: "archive-foo", marker: { week: "2026-11-02", slug: "archive-foo" } } }));
+  const outcome = execute(clean, { env: ON });
+  assert.equal(outcome.status, 0, outcome.stderr);
+  assert.ok(outcome.staged.includes(`${TODAY}-archive-archive-foo.html`));
+  console.log("PASS an archive-looking normal stem counts as a duplicate under both readings");
+}
+
+// F2: content deny-list. Each term must block on its own; the shell's own "100%" must not.
+{
+  const html = [
+    ["$", "Our top rooftop tent is now only $199 for overlanding trips this season."],
+    ["price", "A practical look at the price of every rooftop tent we tested this year."],
+    ["offers", "A rooftop tent guide that offers setup, roof load and weather trade-offs."],
+    ["amazon.com", "Full details and buying links live at amazon.com for every tent we list."],
+    ["amzn.to", "Every tent we list has a short link such as amzn.to for easy checking."],
+    ["media-amazon", "Images are served from media-amazon hosts for every tent we compare."],
+    ["in stock", "Most of the rooftop tents we compare are in stock for overlanding trips."],
+  ];
+  const content = [
+    ["%", "Roof racks that carry 100% of the load of a rooftop tent are rare in practice."],
+    ["rated", "The best rated rooftop tents for overlanding trips compared side by side."],
+    ["star", "Every rooftop tent we compare earns a five star pick in our testing."],
+    ["stars", "Every rooftop tent we compare earns four stars in our testing this year."],
+    ["deal", "A rooftop tent deal worth knowing about before the overlanding season starts."],
+    ["coupon", "A coupon for your next rooftop tent purchase is not something we can promise."],
+    ["discount", "Which rooftop tents are worth buying at a discount before the winter season."],
+    ["cheap", "A cheap rooftop tent is rarely the right choice for overlanding trips."],
+    ["lowest", "The lowest weight rooftop tents compared for overlanding trips this season."],
+    ["sale", "Rooftop tents on sale are rarely the best choice for serious overlanding trips."],
+    ["usd", "A rooftop tent costs about 1500 usd in most shops across the country."],
+    ["tag=", "Read the full tag=ground comparison of rooftop tents for overlanding trips."],
+    ["utm_", "Read the rooftop tent comparison at the utm_source link for overlanding trips."],
+  ];
+  for (const [term, description] of [...html, ...content]) {
+    const ctx = setup(archiveSetup({ articles: [NEWEST, { ...PICK, description }, OTHER] }));
+    const outcome = execute(ctx, { env: ON });
+    assertBlockedLikeToday(outcome, ctx, "editors-pick-unsafe-content");
+    assert.ok(!outcome.staged.some((name) => name.startsWith(`${TODAY}-archive-`)), `term "${term}" must block`);
+  }
+  // Alt text and the title are checked too.
+  const alt = setup(archiveSetup({ index: { slug: PICK.slug, marker: { week: "2026-11-02", slug: PICK.slug }, alt: "Rooftop tent at a 40% discount" } }));
+  assertBlockedLikeToday(execute(alt, { env: ON }), alt, "editors-pick-unsafe-content");
+  const title = setup(archiveSetup({ articles: [NEWEST, { ...PICK, title: "Best Rated Rooftop Tents for Overlanding" }, OTHER] }));
+  assertBlockedLikeToday(execute(title, { env: ON }), title, "editors-pick-unsafe-content");
+  // Ordinary words that merely contain a listed term do not block ("ideal", "dealer" is not whole-word "deal").
+  const ideal = setup(archiveSetup({ articles: [NEWEST, { ...PICK, description: "The ideal rooftop tent for overlanding trips, with setup, roof load and weather notes." }, OTHER] }));
+  const okOutcome = execute(ideal, { env: ON });
+  assert.equal(okOutcome.status, 0, okOutcome.stderr);
+  console.log("PASS every deny-list term blocks the pick; the HTML shell's own 100% does not");
+}
+
+// F4: apostrophes in double-quoted attributes survive on the archive path.
+{
+  const description = "Here's what's best for overlanding: setup, roof load and weather notes, tested in the field.";
+  const ctx = setup(archiveSetup({
+    articles: [NEWEST, { ...PICK, title: "Editor's Choice: Ground Tents vs Rooftop Tents", description, ogTitleOnly: true }, OTHER],
+    index: { slug: PICK.slug, marker: { week: "2026-11-02", slug: PICK.slug }, alt: "A rooftop tent at Hotham's campsite" },
+  }));
+  const outcome = execute(ctx, { env: ON });
+  assert.equal(outcome.status, 0, outcome.stderr);
+  const stem = `${TODAY}-archive-${PICK.slug}`;
+  const html = outcome.files[`${stem}.html`];
+  const meta = JSON.parse(outcome.files[`${stem}.meta.json`]);
+  assert.equal(meta.previewText, description);
+  assert.equal(meta.articleTitle, "Editor's Choice: Ground Tents vs Rooftop Tents");
+  assert.equal(meta.suggestedSubject, "From the archive: Editor's Choice: Ground Tents vs Rooftop Tents");
+  assert.ok(html.includes("Here&#39;s what&#39;s best for overlanding: setup, roof load and weather notes, tested in the field."));
+  assert.ok(html.includes('alt="A rooftop tent at Hotham&#39;s campsite"'));
+  console.log("PASS apostrophes in meta description, og:title and alt text are not truncated");
+}
+
+// F5: the marker week must be within 7 days of the staging date.
+{
+  for (const [week, expectBlocked] of [["2026-10-27", false], ["2026-10-26", true], ["2026-10-19", true], ["2026-11-10", false], ["2026-11-11", true]]) {
+    const ctx = setup(archiveSetup({ index: { slug: PICK.slug, marker: { week, slug: PICK.slug } } }));
+    const outcome = execute(ctx, { env: ON });
+    if (expectBlocked) {
+      assertBlockedLikeToday(outcome, ctx, "editors-pick-stale-marker");
+    } else {
+      assert.equal(outcome.status, 0, `${week}: ${outcome.stderr}`);
+      assert.ok(outcome.staged.includes(`${TODAY}-archive-${PICK.slug}.html`), week);
+    }
+  }
+  console.log("PASS a marker week more than 7 days from the staging date blocks the pick");
 }
 
 // The marker is authoritative when present; the card link is used when it is not.
