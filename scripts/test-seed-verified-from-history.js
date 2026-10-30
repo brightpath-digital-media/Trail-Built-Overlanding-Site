@@ -7,7 +7,7 @@
  */
 
 const assert = require('assert');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -139,7 +139,11 @@ function buildRepo() {
 }
 
 function run(repo, extraArgs) {
-  return execFileSync('node', [SCRIPT, '--repo', repo.dir, '--as-of', AS_OF, ...extraArgs], { encoding: 'utf8' });
+  return execFileSync('node', [SCRIPT, '--repo', repo.dir, '--main-ref', 'main', '--as-of', AS_OF, ...extraArgs], { encoding: 'utf8' });
+}
+
+function runRaw(args) {
+  return spawnSync('node', [SCRIPT, '--as-of', AS_OF, ...args], { encoding: 'utf8' });
 }
 
 function readPool(repo) {
@@ -214,10 +218,10 @@ function main() {
     assert.strictEqual(after.get('B0INSIDE01').verification_status, 'pending-verification');
 
     // Evidence table: SHA, date, article, local image flag.
-    assert.ok(report.includes(`| B0INSIDE01 | Inside Product | articles/main.html | ${repo.shas.main} | 2026-10-05 | yes |`), 'evidence row with a committed local image');
-    assert.ok(report.includes(`| B0LINKONLY | Link Only Product | articles/main.html | ${repo.shas.main} | 2026-10-05 | no |`), 'evidence row without a local image');
-    assert.ok(report.includes(`| B0TWICE001 | Twice Published Product | articles/twice.html | ${repo.shas.twice} | 2026-10-20 | no | ${repo.shas.main.slice(0, 7)} |`), 'evidence row lists other qualifying commits');
-    assert.ok(report.includes(`${repo.shas.marker} | 2026-10-06 | chore: auto-publish marker-only.html on 2026-10-06 | skipped`), 'the marker-only commit is listed as skipped');
+    assert.ok(report.includes(`| B0INSIDE01 | Inside Product | articles/main.html | ${repo.shas.main} | 2026-10-05 | not recorded | yes |`), 'evidence row with a committed local image');
+    assert.ok(report.includes(`| B0LINKONLY | Link Only Product | articles/main.html | ${repo.shas.main} | 2026-10-05 | not recorded | no |`), 'evidence row without a local image');
+    assert.ok(report.includes(`| B0TWICE001 | Twice Published Product | articles/twice.html | ${repo.shas.twice} | 2026-10-20 | not recorded | no | ${repo.shas.main.slice(0, 7)} |`), 'evidence row lists other qualifying commits');
+    assert.ok(report.includes(`${repo.shas.marker} | 2026-10-06 | chore: auto-publish marker-only.html on 2026-10-06 | not recorded | skipped`), 'the marker-only commit is listed as skipped');
 
     // Idempotent: a second run changes nothing, byte for byte.
     const once = fs.readFileSync(repo.poolFile, 'utf8');
@@ -230,11 +234,70 @@ function main() {
     fs.mkdirSync(path.join(narrow, 'data'));
     const narrowPool = path.join(narrow, 'data', 'verified-products.json');
     fs.writeFileSync(narrowPool, original);
-    execFileSync('node', [SCRIPT, '--repo', repo.dir, '--pool', narrowPool, '--as-of', AS_OF, '--window-days', '10', '--write'], { encoding: 'utf8' });
+    run(repo, ['--pool', narrowPool, '--window-days', '10', '--write']);
     const narrowed = byAsin(JSON.parse(fs.readFileSync(narrowPool, 'utf8')));
     assert.strictEqual(narrowed.get('B0TWICE001').last_verified_at, '2026-10-20');
     assert.strictEqual(narrowed.get('B0INSIDE01').last_verified_at, undefined, '--window-days 10 excludes the 10-05 commit');
     fs.rmSync(narrow, { recursive: true, force: true });
+
+    // --exclude-sha: the excluded commit seeds nothing, everything else is unaffected, and it is idempotent.
+    const excl = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-history-excl-'));
+    fs.mkdirSync(path.join(excl, 'data'));
+    const exclPool = path.join(excl, 'data', 'verified-products.json');
+    fs.writeFileSync(exclPool, original);
+    const exclEvidence = path.join(excl, 'evidence.md');
+    const exclArgs = ['--pool', exclPool, '--exclude-sha', repo.shas.main.slice(0, 7), '--write', '--evidence-out', exclEvidence];
+    run(repo, exclArgs);
+    const excluded = byAsin(JSON.parse(fs.readFileSync(exclPool, 'utf8')));
+    for (const asin of ['B0INSIDE01', 'B0LINKONLY', 'B0OLDER001']) {
+      assert.strictEqual(excluded.get(asin).last_verified_at, asin === 'B0OLDER001' ? '2026-01-01' : undefined, `${asin} comes only from the excluded commit`);
+    }
+    assert.strictEqual(excluded.get('B0OLDER001').verification_source, 'creators-api', 'an excluded commit leaves an existing entry alone');
+    assert.strictEqual(excluded.get('B0TWICE001').last_verified_at, '2026-10-20', 'the same ASIN still seeds from its other commit');
+    assert.strictEqual(excluded.get('B0EDGE0001').last_verified_at, '2026-09-14', 'other commits are unaffected');
+    assert.strictEqual(excluded.get('B0TZDATE01').last_verified_at, '2026-10-11');
+    assert.strictEqual(excluded.get('B0NEWER001').last_verified_at, '2026-10-25');
+    const exclReport = fs.readFileSync(exclEvidence, 'utf8');
+    assert.ok(exclReport.includes(`- ${repo.shas.main} (main.html)`), 'the evidence header lists the excluded commit');
+    assert.ok(exclReport.includes('excluded by --exclude-sha (deploy gate failed)'));
+    assert.ok(!/\| B0INSIDE01 \|/.test(exclReport), 'no evidence row for an ASIN that only the excluded commit supports');
+    const exclOnce = fs.readFileSync(exclPool, 'utf8');
+    assert.ok(/--write: 0 product\(s\) updated/.test(run(repo, exclArgs)), 'excluded run is idempotent');
+    assert.strictEqual(fs.readFileSync(exclPool, 'utf8'), exclOnce);
+    const badSha = runRaw(['--repo', repo.dir, '--main-ref', 'main', '--exclude-sha', 'zz']);
+    assert.notStrictEqual(badSha.status, 0, 'a malformed --exclude-sha is rejected');
+    fs.rmSync(excl, { recursive: true, force: true });
+
+    // Deploy evidence column is informational: copied from --deploy-runs, never seeds or excludes by itself.
+    const runsFile = path.join(repo.dir, 'deploy-runs.json');
+    fs.writeFileSync(runsFile, JSON.stringify({ [repo.shas.main]: { run_id: '777', conclusion: 'failure', issue: 'open issue #1' } }));
+    const withRuns = runRaw(['--repo', repo.dir, '--main-ref', 'main', '--deploy-runs', runsFile]);
+    assert.strictEqual(withRuns.status, 0, withRuns.stderr);
+    assert.ok(withRuns.stdout.includes('failure (run 777), open issue #1'), 'the deploy conclusion and run id are shown');
+    assert.ok(withRuns.stderr.includes('WARNING') && withRuns.stderr.includes(repo.shas.main), 'a failed deploy that is not excluded is warned about');
+    assert.ok(/Dry run: \d+ product\(s\) would be updated/.test(withRuns.stdout), 'the deploy column never excludes or seeds by itself');
+
+    // main ref: no silent fallback to main or HEAD when origin/main is absent.
+    const noRef = runRaw(['--repo', repo.dir]);
+    assert.notStrictEqual(noRef.status, 0, 'without origin/main and without --main-ref the script fails');
+    assert.ok(/pass --main-ref/.test(noRef.stderr), 'the failure says to pass --main-ref');
+    assert.ok(!/Tier 3 seed evidence/.test(noRef.stdout), 'nothing is computed from a fallback ref');
+    assert.notStrictEqual(runRaw(['--repo', repo.dir, '--main-ref', 'no-such-ref']).status, 0, 'an unresolvable --main-ref fails');
+
+    // Shallow guard: a depth-1 clone aborts loudly unless --allow-shallow.
+    const shallow = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-history-shallow-'));
+    sh(shallow, ['clone', '-q', '--depth', '1', `file://${repo.dir}`, 'clone']);
+    const cloneDir = path.join(shallow, 'clone');
+    assert.strictEqual(sh(cloneDir, ['rev-parse', '--is-shallow-repository']).trim(), 'true', 'fixture clone is shallow');
+    const blocked = runRaw(['--repo', cloneDir]);
+    assert.notStrictEqual(blocked.status, 0, 'a shallow clone exits non-zero');
+    assert.ok(/SHALLOW/.test(blocked.stderr), 'the shallow warning is loud');
+    assert.ok(!/Tier 3 seed evidence/.test(blocked.stdout), 'no evidence is produced from a shallow clone');
+    const allowed = runRaw(['--repo', cloneDir, '--allow-shallow']);
+    assert.strictEqual(allowed.status, 0, `--allow-shallow continues: ${allowed.stderr}`);
+    assert.ok(/SHALLOW/.test(allowed.stderr), 'the warning is still printed with --allow-shallow');
+    assert.ok(!/does not resolve/.test(allowed.stderr), 'a clone has origin/main, so no --main-ref is needed there');
+    fs.rmSync(shallow, { recursive: true, force: true });
 
     console.log('seed-verified-from-history tests passed');
   } finally {

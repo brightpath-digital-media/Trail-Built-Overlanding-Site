@@ -12,10 +12,18 @@
  *   3. The commit is reachable from the main ref (--main-ref, default origin/main, then main, then HEAD).
  *   4. The article is still present at HEAD and the ASIN is still on that page.
  *   5. The ASIN is already in the pool file. This script never adds a product and never invents an ASIN.
+ *   6. The commit is not listed with --exclude-sha.
  *
  * Limitation: whether the run's gates passed (the later `Verify Deploy Live` conclusion) cannot be read offline.
- * Conditions 1, 3 and 4 are the offline stand-in: a normal auto-publish commit that reached main and whose article
- * and ASIN survive at HEAD. A human audits the evidence table against `git show`.
+ * Conditions 1, 3 and 4 are the offline stand-in, and they OVER-SEED relative to the plan: a commit whose deploy
+ * check failed still looks like a normal auto-publish commit. So a human reads the `Verify Deploy Live` conclusion
+ * for each qualifying commit from the GitHub Actions API and passes every failed one with --exclude-sha (reason:
+ * deploy gate failed). Those exclusions are hand-added from API evidence, not derived by this script.
+ * --deploy-runs <json> lets that API evidence ride along into the evidence table (informational; it never
+ * seeds or excludes by itself). Build it with, per commit:
+ *   gh api "repos/<owner>/<repo>/actions/workflows/verify-deploy.yml/runs?head_sha=<sha>" \
+ *     --jq '.workflow_runs[] | {run_id: .id, conclusion: .conclusion}'
+ * File shape: { "<full sha>": { "run_id": "123", "conclusion": "success", "issue": "optional note" } }
  *
  * last_verified_at = the UTC author date of the MOST RECENT qualifying commit. verification_source is set to
  * 'published-history'. verification_status is never read or written. An existing last_verified_at that is the same
@@ -23,7 +31,10 @@
  *
  * Usage:
  *   node scripts/seed-verified-from-history.mjs [--as-of YYYY-MM-DD] [--window-days 45] [--write]
- *        [--evidence-out <path>] [--repo <dir>] [--pool <file>] [--main-ref <ref>]
+ *        [--evidence-out <path>] [--exclude-sha <sha>]... [--deploy-runs <json>]
+ *        [--repo <dir>] [--pool <file>] [--main-ref <ref>] [--allow-shallow]
+ * --main-ref is required unless origin/main exists; there is no silent fallback to main or HEAD.
+ * A shallow clone aborts (history is incomplete) unless --allow-shallow is given.
  * Default is a dry run that prints the evidence table and writes nothing.
  */
 
@@ -57,6 +68,9 @@ function parseArgs(argv) {
     repo: DEFAULT_REPO,
     pool: '',
     mainRef: '',
+    excludeShas: [],
+    deployRuns: '',
+    allowShallow: false,
   };
   const takeValue = (index, flag) => {
     if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) fail(`${flag} needs a value`);
@@ -71,10 +85,14 @@ function parseArgs(argv) {
     else if (arg === '--repo') opts.repo = path.resolve(takeValue(i++, arg));
     else if (arg === '--pool') opts.pool = path.resolve(takeValue(i++, arg));
     else if (arg === '--main-ref') opts.mainRef = takeValue(i++, arg);
+    else if (arg === '--exclude-sha') opts.excludeShas.push(takeValue(i++, arg).toLowerCase());
+    else if (arg === '--deploy-runs') opts.deployRuns = path.resolve(takeValue(i++, arg));
+    else if (arg === '--allow-shallow') opts.allowShallow = true;
     else fail(`unknown argument ${arg}`);
   }
   if (!DATE_RE.test(opts.asOf) || Number.isNaN(Date.parse(`${opts.asOf}T00:00:00Z`))) fail('--as-of must be YYYY-MM-DD');
   if (!Number.isInteger(opts.windowDays) || opts.windowDays < 0) fail('--window-days must be a non-negative integer');
+  for (const sha of opts.excludeShas) if (!/^[0-9a-f]{7,40}$/.test(sha)) fail(`--exclude-sha needs 7 to 40 hex characters, got "${sha}"`);
   if (!opts.pool) opts.pool = path.join(opts.repo, 'data', 'verified-products.json');
   return opts;
 }
@@ -89,11 +107,20 @@ function git(repo, args, { allowFail = false } = {}) {
 }
 
 function resolveMainRef(repo, requested) {
-  const candidates = requested ? [requested] : ['origin/main', 'main', 'HEAD'];
-  for (const ref of candidates) {
-    if (git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { allowFail: true }) !== null) return ref;
+  const ref = requested || 'origin/main';
+  if (git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { allowFail: true }) === null) {
+    throw new Error(requested
+      ? `main ref "${requested}" does not resolve in ${repo}`
+      : `origin/main does not resolve in ${repo}; pass --main-ref <ref> explicitly (no silent fallback to main or HEAD)`);
   }
-  throw new Error(`no usable main ref (tried ${candidates.join(', ')})`);
+  return ref;
+}
+
+function assertNotShallow(opts) {
+  if (git(opts.repo, ['rev-parse', '--is-shallow-repository'], { allowFail: true }).trim() !== 'true') return;
+  const message = 'WARNING: this is a SHALLOW clone; auto-publish history older than the clone depth is missing, so the evidence is incomplete.';
+  if (!opts.allowShallow) throw new Error(`${message} Fetch full history (git fetch --unshallow) or pass --allow-shallow.`);
+  console.warn(`[seed-history] ${message} Continuing because --allow-shallow was given.`);
 }
 
 function utcDate(isoTimestamp) {
@@ -140,6 +167,21 @@ function listAutoPublishCommits(repo, mainRef) {
   });
 }
 
+function loadDeployRuns(file) {
+  if (!file) return {};
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new Error(`cannot read --deploy-runs ${file}: ${error.message}`);
+  }
+}
+
+function deployCell(deployRuns, sha) {
+  const run = deployRuns[sha];
+  if (!run) return 'not recorded';
+  return `${run.conclusion || 'unknown'} (run ${run.run_id})${run.issue ? `, ${run.issue}` : ''}`;
+}
+
 function collectEvidence(opts, poolAsins) {
   const mainRef = resolveMainRef(opts.repo, opts.mainRef);
   const asOfDay = dayNumber(opts.asOf);
@@ -154,6 +196,7 @@ function collectEvidence(opts, poolAsins) {
     if (age < 0 || age > opts.windowDays) { outsideWindow++; continue; }
     const row = { ...commit, file: match[1], decision: '', asins: 0 };
     considered.push(row);
+    if (opts.excludeShas.some(prefix => commit.sha.startsWith(prefix))) { row.decision = 'excluded by --exclude-sha (deploy gate failed)'; row.excluded = true; continue; }
     if (commit.parents.length !== 1) { row.decision = 'skipped: not a single-parent commit'; continue; }
 
     const added = git(opts.repo, ['diff-tree', '-r', '--no-commit-id', '--name-only', '--diff-filter=A', commit.sha])
@@ -183,10 +226,11 @@ function collectEvidence(opts, poolAsins) {
       else current.others.push(candidate.sha);
     }
   }
-  return { mainRef, considered, evidence, outsideWindow };
+  const unmatched = opts.excludeShas.filter(prefix => !considered.some(row => row.sha.startsWith(prefix)));
+  return { mainRef, considered, evidence, outsideWindow, unmatched };
 }
 
-function renderReport(opts, products, result) {
+function renderReport(opts, products, result, deployRuns) {
   const names = new Map(products.map(product => [product.asin, product.name]));
   const rows = [...result.evidence.values()]
     .sort((a, b) => b.date.localeCompare(a.date) || a.article.localeCompare(b.article) || a.asin.localeCompare(b.asin));
@@ -200,17 +244,22 @@ function renderReport(opts, products, result) {
     'is limited to: a normal `chore: auto-publish` commit that is on main, whose article is still present at HEAD with the ASIN still on the page.',
     '`verification_status` is not changed by this seed; every entry stays `pending-verification`.',
     '',
+    'The offline rule over-seeds relative to the plan ("in a run whose gates passed"). The `Verify Deploy Live` column below is copied',
+    'from the GitHub Actions API (`--deploy-runs`), not derived offline, and the exclusions were added by hand from that evidence.',
+    ...(opts.excludeShas.length
+      ? ['', 'Excluded with `--exclude-sha` (reason: deploy gate failed):', ...result.considered.filter(row => row.excluded).map(row => `- ${row.sha} (${row.file}): ${deployCell(deployRuns, row.sha)}`), '']
+      : ['']),
     `## Seeded ASINs (${rows.length})`,
     '',
-    '| ASIN | Product | Article | Commit SHA | Commit date (UTC) | Local image | Other qualifying commits |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
-    ...rows.map(row => `| ${row.asin} | ${String(names.get(row.asin) || '').replace(/\|/g, '/')} | ${row.article} | ${row.sha} | ${row.date} | ${row.image ? 'yes' : 'no'} | ${row.others.map(sha => sha.slice(0, 7)).join(', ') || '-'} |`),
+    '| ASIN | Product | Article | Commit SHA | Commit date (UTC) | Verify Deploy Live | Local image | Other qualifying commits |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...rows.map(row => `| ${row.asin} | ${String(names.get(row.asin) || '').replace(/\|/g, '/')} | ${row.article} | ${row.sha} | ${row.date} | ${deployCell(deployRuns, row.sha)} | ${row.image ? 'yes' : 'no'} | ${row.others.map(sha => sha.slice(0, 7)).join(', ') || '-'} |`),
     '',
     `## Auto-publish commits inside the window (${result.considered.length}; ${result.outsideWindow} more fall outside it)`,
     '',
-    '| Commit SHA | Author date (UTC) | Subject | Decision |',
-    '| --- | --- | --- | --- |',
-    ...result.considered.map(row => `| ${row.sha} | ${row.authorDate} | ${row.subject} | ${row.decision} |`),
+    '| Commit SHA | Author date (UTC) | Subject | Verify Deploy Live | Decision |',
+    '| --- | --- | --- | --- | --- |',
+    ...result.considered.map(row => `| ${row.sha} | ${row.authorDate} | ${row.subject} | ${deployCell(deployRuns, row.sha)} | ${row.decision} |`),
     '',
   ];
   return lines.join('\n');
@@ -257,8 +306,17 @@ function main() {
   if (!document || !Array.isArray(document.products)) fail('pool file has no products array');
   const poolAsins = new Set(document.products.map(product => product.asin).filter(asin => ASIN_RE.test(asin || '')));
 
+  assertNotShallow(opts);
+  const deployRuns = loadDeployRuns(opts.deployRuns);
   const result = collectEvidence(opts, poolAsins);
-  const report = renderReport(opts, document.products, result);
+  for (const prefix of result.unmatched) console.warn(`[seed-history] WARNING: --exclude-sha ${prefix} matched no auto-publish commit inside the window.`);
+  for (const row of result.considered) {
+    const conclusion = deployRuns[row.sha] && deployRuns[row.sha].conclusion;
+    if (!row.excluded && row.asins > 0 && conclusion && conclusion !== 'success') {
+      console.warn(`[seed-history] WARNING: ${row.sha} has Verify Deploy Live conclusion "${conclusion}" but is not excluded.`);
+    }
+  }
+  const report = renderReport(opts, document.products, result, deployRuns);
   const actions = applySeed(document, result.evidence);
   const changed = actions.filter(action => action.changed).length;
 
