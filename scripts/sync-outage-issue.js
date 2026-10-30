@@ -5,8 +5,8 @@
  *
  *   LOOKUP_OUTAGE     create the issue, or update its body (and reopen it if closed, with a
  *                     comment, because a new outage started).
- *   anything else     if the issue is open and this run had LIVE results, post a recovery
- *                     comment and close it. Otherwise do nothing: no issue is created for a
+ *   anything else     if the issue is open and at least half of the lookups were LIVE, post a
+ *                     recovery comment and close it. Otherwise do nothing: no issue is created for a
  *                     healthy run.
  *
  * Reads the run report written by `build-verified-pool.mjs --verify --run-report <file>`.
@@ -24,6 +24,7 @@ const { getCreatorsCredentials, maskSecrets, safeCode } = require('./asin-verifi
 const TITLE = 'Amazon lookup outage';
 const LABEL = 'lookup-outage';
 const MAX_TEXT = 200;
+const RECOVERY_LIVE_SHARE = 0.5;
 const STATE_MARKER = /<!--\s*outage-state:\s*([A-Z_]+)\s*-->/;
 
 const MEANING = {
@@ -90,8 +91,10 @@ async function sync(report, ctx, { credentials = {}, runUrl = '', carryForwardEn
     return { action: wasClosed ? 'reopened' : 'updated', number: existing.number, verdict };
   }
 
-  // Not an outage. Close only an open issue, and only on positive evidence (LIVE results).
-  if (existing && existing.state === 'open' && Number(report.live) > 0) {
+  // Not an outage. Close only an open issue, and only on clear recovery: at least half of the
+  // lookups LIVE. A mostly-failing lookup with a few LIVE hits is not recovered (hysteresis).
+  const liveShare = Number(report.total) > 0 ? Number(report.live) / Number(report.total) : 0;
+  if (existing && existing.state === 'open' && liveShare >= RECOVERY_LIVE_SHARE) {
     await api('POST', `/issues/${existing.number}/comments`, { body: `Lookup recovered at ${stamp}: ${Number(report.live)} of ${Number(report.total)} lookups were LIVE. Tier 1 verification resumed; closing.` }, ctx);
     await api('PATCH', `/issues/${existing.number}`, { body, state: 'closed' }, ctx);
     return { action: 'closed', number: existing.number, verdict };

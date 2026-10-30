@@ -118,19 +118,34 @@ function testLoader(dir) {
     product('B0BADSRC01', { verification_source: 'manual', last_verified_at: '2026-10-17' }),
     product('B0FUTURE01', evidence('2026-11-30')),
     product('B0SEEDED01', { verification_source: 'published-history', last_verified_at: '2026-10-19' }),
+    product('B0RECHECK1', { verification_source: 'page-recheck', last_verified_at: '2026-10-25' }), // exclusion mechanism only
+    product('B0SEEDLATE', { verification_source: 'published-history', last_verified_at: '2026-10-29' }), // last day the one-time seed can carry
+    product('B0SEEDREFR', { verification_source: 'published-history', last_verified_at: '2026-10-30' }), // a refreshed "seed" is not the seed
+    product('B0BADDATE1', evidence('2026-09-31')), // impossible calendar date
+    product('B0OWNFAIL1', evidence('2026-10-17')), // its own lookup failed with a product-specific error
   ];
   write(fixtures);
 
   // Outage + flag on: only entries inside the window, with a local image, not delisted.
-  const { value: carried, lines } = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: outageReport }));
-  assert.deepStrictEqual([...carried.keys()].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01']);
+  const outageWithOwnFailure = buildRunReport([
+    ...repeat(empty, 125),
+    { ...other(), asin: 'B0OWNFAIL1' },
+  ].map((result, index) => (result.asin ? result : { ...result, asin: `B0FILL${String(index).padStart(5, '0')}` })));
+  assert.strictEqual(outageWithOwnFailure.classification, OUTAGE);
+  assert.strictEqual(outageWithOwnFailure.failed_kinds.B0OWNFAIL1, 'other');
+  assert.ok(Object.values(outageWithOwnFailure.failed_kinds).every(kind => typeof kind === 'string' && kind.length < 12), 'kinds only, no messages');
+  const { value: carried, lines } = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: outageWithOwnFailure }));
+  assert.deepStrictEqual([...carried.keys()].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01', 'B0SEEDLATE']);
   assert.strictEqual(carried.get('B0FRESH001').verification_status, 'pending-verification', 'carry-forward never relabels status');
   assert.strictEqual(carried.evidence.tier, 'carry-forward');
   assert.strictEqual(carried.evidence.classification, OUTAGE);
-  assert.deepStrictEqual(carried.evidence.excluded, { expired: 1, 'no-local-image': 1, 'no-evidence': 3 });
+  assert.deepStrictEqual(carried.evidence.excluded, { expired: 1, 'no-local-image': 1, 'no-evidence': 6, 'own-lookup-failed': 1 });
   assert.ok(!carried.has('B0DELISTED'));
   assert.strictEqual(lines.filter(line => line === '[asin-precheck] LOOKUP_OUTAGE: using carry-forward pool (tier 2/3)').length, 1);
-  assert.deepStrictEqual([...carried.evidence.carriedAsins].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01']);
+  assert.deepStrictEqual([...carried.evidence.carriedAsins].sort(), ['B0FRESH001', 'B0LIMIT045', 'B0SEEDED01', 'B0SEEDLATE']);
+  // Without per-ASIN kinds (an old-style report) the same entry is not excluded; with them it is.
+  const withoutKinds = withCapturedLog(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: outageReport })).value;
+  assert.ok(withoutKinds.has('B0OWNFAIL1'));
 
   // Minority failing is a product failure: fail closed, no carry-forward, even with the flag on.
   assert.throws(() => loadVerifiedPool(file, true, { ...base, allowCarryForward: true, runReport: minorityReport }), error => error.message === OLD_MESSAGE(file));
@@ -272,6 +287,15 @@ async function testCarryForwardGate() {
     assert.ok(written.startsWith('evidence_tier=carry-forward\ncommit_body<<TIER_BODY_EOF\n'));
     assert.ok(written.includes('B0CARRIED1 last_verified_at=2026-10-19 source=published-history'));
     assert.ok(!/chore: auto-publish/.test(written), 'the body must not carry the commit-subject prefix');
+
+    // N12: a carry-forward pool whose article used only Tier 1 ASINs is not labelled carry-forward.
+    fs.rmSync(out);
+    const mixedPool = new Map([...carry, ['B0TIERONE1', product('B0TIERONE1')]]);
+    Object.defineProperty(mixedPool, 'evidence', { value: { tier: 'carry-forward', carriedAsins: new Set(['B0CARRIED1']) } });
+    assert.strictEqual(tierCommitBody(mixedPool, ['B0TIERONE1']), '');
+    withCapturedLog(() => publishTierOutputs(mixedPool, ['B0TIERONE1'], out));
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), 'evidence_tier=tier-1\n');
+    assert.ok(tierCommitBody(mixedPool, ['B0TIERONE1', 'B0CARRIED1']).startsWith('evidence-tier: carry-forward'));
   } finally {
     fs.rmSync(dir2, { recursive: true, force: true });
   }
@@ -338,6 +362,18 @@ async function testIssueSync() {
     assert.strictEqual((await outageIssue.sync(outage, ctx, { credentials })).action, 'reopened');
     assert.deepStrictEqual(writes(), ['POST /issues/9/comments', 'PATCH /issues/9']);
 
+    // Hysteresis: a mostly-failing lookup with a few LIVE hits is not recovered. Not an outage
+    // (84 percent systemic), 20 of 126 LIVE (16 percent): the open issue stays open.
+    calls.length = 0;
+    issues[0].state = 'open';
+    const limping = buildRunReport([...repeat(live, 20), ...repeat(empty, 106)]);
+    assert.strictEqual(classifyRunReport(limping), PRODUCT);
+    assert.strictEqual((await outageIssue.sync(limping, ctx, { credentials })).action, 'none');
+    assert.deepStrictEqual(writes(), []);
+    // At 50 percent LIVE it closes.
+    assert.strictEqual((await outageIssue.sync(buildRunReport([...repeat(live, 63), ...repeat(other, 63)]), ctx, { credentials })).action, 'closed');
+    issues[0].state = 'open';
+
     // No LIVE evidence (e.g. a product failure with zero LIVE) never closes an open issue.
     calls.length = 0;
     issues[0].state = 'open';
@@ -364,16 +400,30 @@ async function testIssueSync() {
   }
 }
 
+function walkFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => (
+    entry.isDirectory() ? walkFiles(path.join(dir, entry.name)) : [path.join(dir, entry.name)]
+  ));
+}
+
 function testWorkflowSwitches() {
   const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'weekly-content.yml'), 'utf8');
-  // ALLOW_CARRY_FORWARD must not be set anywhere in the workflows (comments excluded).
-  for (const name of fs.readdirSync(path.join(ROOT, '.github', 'workflows'))) {
-    const text = fs.readFileSync(path.join(ROOT, '.github', 'workflows', name), 'utf8');
-    assert.ok(!/^\s*ALLOW_CARRY_FORWARD\s*:/m.test(text), `${name} must not set ALLOW_CARRY_FORWARD`);
+  // The carry-forward switch must not appear anywhere under .github in any form: not as env:,
+  // not echoed into GITHUB_ENV, not in a comment, in any case.
+  const githubFiles = walkFiles(path.join(ROOT, '.github'));
+  assert.ok(githubFiles.length > 3);
+  for (const file of githubFiles) {
+    assert.ok(!/allow[_\s-]*carry[_\s-]*forward/i.test(fs.readFileSync(file, 'utf8')), `${path.relative(ROOT, file)} must not mention the carry-forward switch`);
   }
   assert.ok(/REQUIRE_POOL_VERIFICATION: 'true'/.test(workflow), 'REQUIRE_POOL_VERIFICATION must stay true');
   assert.ok(/--run-report "\$RUNNER_TEMP\/pool-run-report\.json"/.test(workflow));
-  assert.ok(/git commit -m "chore: auto-publish \$\{ARTICLE\} on \$\(date \+%Y-%m-%d\)"/.test(workflow), 'commit subject must stay exact');
+  // Both commit branches keep the exact subject; only the carry-forward one adds a body.
+  const commits = workflow.split('\n').filter(line => /\bgit commit\b/.test(line)).map(line => line.trim());
+  assert.deepStrictEqual(commits, [
+    'git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)" -m "$TIER_BODY"',
+    'git commit -m "chore: auto-publish ${ARTICLE} on $(date +%Y-%m-%d)"',
+  ]);
+  assert.ok(/if \[ -n "\$TIER_BODY" \]; then\s+#[^\n]*\n\s+git commit -m "chore: auto-publish[^\n]*-m "\$TIER_BODY"\s+else\s+git commit/.test(workflow), 'the body branch is guarded by TIER_BODY');
   assert.ok(workflow.indexOf('Build runtime-verified product pool') < workflow.indexOf('Generate new article'), 'pool build runs before generation');
   const netlify = fs.readFileSync(path.join(ROOT, 'netlify.toml'), 'utf8');
   assert.ok(/ASIN_VALIDATE\s*=\s*"warn"/.test(netlify), 'ASIN_VALIDATE must stay warn');

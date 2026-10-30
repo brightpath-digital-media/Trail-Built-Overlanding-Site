@@ -300,17 +300,28 @@ const POOL_STOP_WORDS = new Set([
 // has set ALLOW_CARRY_FORWARD=true. That flag is OFF by default and is not set in any workflow;
 // turning it on is a publishing-gate decision that needs Kyle's explicit approval.
 const CARRY_FORWARD_MAX_AGE_DAYS = 45;
-const CARRY_FORWARD_SOURCES = new Set(['creators_api', 'published-history', 'page-recheck']);
+// Tier 2 is evidence from an earlier successful Tier 1 run ('creators_api'). Tier 3 is the
+// one-time seed from published git history ('published-history'); it cannot carry a date later
+// than the day the plan was written, so it can never be refreshed into a standing source.
+// 'page-recheck' is an exclusion mechanism only (delisted_at): a page pass does not extend the
+// carry-forward window, which Kyle can revisit.
+const CARRY_FORWARD_SOURCES = new Set(['creators_api', 'published-history']);
+const PUBLISHED_HISTORY_SEED_LAST_DATE = '2026-10-29';
 
+/** Day number of a real calendar date (2026-09-31 is NaN), else NaN. */
 function utcDayNumber(isoDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate || '')) return NaN;
   const time = Date.parse(`${isoDate}T00:00:00Z`);
-  return Number.isFinite(time) ? Math.floor(time / 86400000) : NaN;
+  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== isoDate) return NaN;
+  return Math.floor(time / 86400000);
 }
 
 /** Why a non-verified entry may not be carried forward, or '' when it may. (Delisted entries never get here.) */
-function carryForwardExclusion(product, { today, hasLocalImage }) {
+function carryForwardExclusion(product, { today, hasLocalImage, failedKinds = {} }) {
   if (!CARRY_FORWARD_SOURCES.has(product.verification_source) || !Number.isFinite(utcDayNumber(product.last_verified_at))) return 'no-evidence';
+  if (product.verification_source === 'published-history' && utcDayNumber(product.last_verified_at) > utcDayNumber(PUBLISHED_HISTORY_SEED_LAST_DATE)) return 'no-evidence';
+  // An entry whose own lookup failed with a product-specific error is never extended, even in an outage.
+  if (failedKinds[product.asin] === 'other') return 'own-lookup-failed';
   const age = utcDayNumber(today) - utcDayNumber(product.last_verified_at);
   if (!(age >= 0)) return 'no-evidence';
   if (age > CARRY_FORWARD_MAX_AGE_DAYS) return 'expired';
@@ -366,6 +377,7 @@ function loadVerifiedPool(poolFile = VERIFIED_POOL_FILE, requireVerifiedStatus =
       const context = {
         today: options.today || todayISO(),
         hasLocalImage: options.hasLocalImage || (product => Boolean(findExistingLocalProductImage(product))),
+        failedKinds: report?.failed_kinds || {},
       };
       for (const product of entries) {
         if (product.verification_status === 'verified') continue;
@@ -1299,6 +1311,8 @@ function tierCommitBody(pool, usedAsins) {
   const evidence = pool.evidence;
   if (!evidence || evidence.tier !== 'carry-forward') return '';
   const carriedUsed = usedAsins.filter(asin => evidence.carriedAsins.has(asin));
+  // Never label a commit carry-forward when no carried ASIN made it into the article.
+  if (carriedUsed.length === 0) return '';
   return [
     'evidence-tier: carry-forward (lookup outage, tier 2/3)',
     `carry-forward ASINs used: ${carriedUsed.length} of ${usedAsins.length}`,
@@ -1307,11 +1321,12 @@ function tierCommitBody(pool, usedAsins) {
 }
 
 function publishTierOutputs(pool, usedAsins, outputFile = process.env.GITHUB_OUTPUT) {
-  const evidence = pool.evidence || { tier: 'tier-1', classification: null };
-  console.log(`[asin-precheck] Evidence tier used: ${evidence.tier}`);
-  if (!outputFile) return;
-  const lines = [`evidence_tier=${evidence.tier}`];
   const body = tierCommitBody(pool, usedAsins);
+  // The tier that actually produced the article: carry-forward only if a carried ASIN was used.
+  const tier = body ? 'carry-forward' : 'tier-1';
+  console.log(`[asin-precheck] Evidence tier used: ${tier}`);
+  if (!outputFile) return;
+  const lines = [`evidence_tier=${tier}`];
   if (body) lines.push('commit_body<<TIER_BODY_EOF', body, 'TIER_BODY_EOF');
   fs.appendFileSync(outputFile, `${lines.join('\n')}\n`);
 }
