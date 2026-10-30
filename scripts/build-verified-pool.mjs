@@ -164,7 +164,8 @@ function isCalendarDate(value) {
  * The evidence fields of a committed entry that are safe to carry forward. Evidence is
  * all-or-nothing: a date needs a known source and a source needs a real date, so a
  * hand-edited or corrupted entry loses its evidence instead of being believed.
- * delisted_at, amazon_title and image_local_path are checked on their own.
+ * delisted_at is kept whenever it is set (see below); amazon_title and image_local_path are
+ * checked on their own.
  */
 function validEvidence(before) {
   const out = {};
@@ -175,7 +176,9 @@ function validEvidence(before) {
   if (typeof before.amazon_title === 'string' && before.amazon_title.trim() && before.amazon_title.length <= 500) {
     out.amazon_title = before.amazon_title;
   }
-  if (isCalendarDate(before.delisted_at)) out.delisted_at = before.delisted_at;
+  // Fail closed: delisted_at is an exclusion flag, so ANY truthy value survives as it is, even a
+  // malformed one ('yes', a datetime, trailing space). Dropping it would silently un-delist the product.
+  if (before.delisted_at) out.delisted_at = before.delisted_at;
   const image = before.image_local_path;
   if (typeof image === 'string' && image.startsWith('assets/product-images/') && !image.includes('..') && !/[\s\\]/.test(image)) {
     out.image_local_path = image;
