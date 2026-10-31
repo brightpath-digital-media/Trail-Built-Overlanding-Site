@@ -15,6 +15,13 @@ jobs:
     name: Poll version.txt until live
     runs-on: ubuntu-latest
     steps:
+      # Full history so a live SHA that is a descendant of EXPECTED_SHA can be recognised.
+      # 10/30 race: pushes 5e38488 and 9445e82 each opened a false "DEPLOY NOT LIVE" issue
+      # because main moved on, so the live SHA was a newer commit than the one being verified.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Wait for Netlify deploy and verify version.txt
         env:
           SITE_URL: https://trailbuiltoverland.com
@@ -30,6 +37,16 @@ jobs:
             if [ "$live_sha" = "$EXPECTED_SHA" ]; then
               echo "✅ Deploy confirmed live at ${elapsed}s"
               exit 0
+            fi
+            # Live is a later commit on main: the expected deploy is superseded, not missing.
+            # An older, unknown or unreadable live SHA never passes.
+            if echo "$live_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              git fetch --quiet origin main || true
+              if git merge-base --is-ancestor "$EXPECTED_SHA" "$live_sha" 2>/dev/null \
+                 && git merge-base --is-ancestor "$live_sha" origin/main 2>/dev/null; then
+                echo "✅ Live ${live_sha} is a descendant of ${EXPECTED_SHA} on main (${elapsed}s)"
+                exit 0
+              fi
             fi
             sleep $INTERVAL
             elapsed=$((elapsed + INTERVAL))
