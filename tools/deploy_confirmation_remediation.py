@@ -31,8 +31,22 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HOME = Path("/home/ubuntu")
-REPORT_RECIPIENT = "kamilano1@gmail.com"
+# The report recipient is deliberately NOT stored in the repo. It is read from the
+# environment of whatever scheduled task runs this engine and has no default.
+REPORT_RECIPIENT_ENV = "AFFILIATE_REPORT_RECIPIENT"
 MAX_AUTO_ATTEMPTS = 2
+
+
+def report_recipient() -> str | None:
+    """Return the configured report recipient, or None when the env var is unset/blank."""
+    return os.environ.get(REPORT_RECIPIENT_ENV, "").strip() or None
+
+
+def email_skip_reason() -> str | None:
+    """Return a log line explaining why the email step is skipped, or None when it can run."""
+    if report_recipient():
+        return None
+    return f"{REPORT_RECIPIENT_ENV} is not set; skipping the email step (no recipient configured)."
 
 
 @dataclass(frozen=True)
@@ -478,7 +492,6 @@ def reconcile_all(expected_shas: dict[str, str] | None = None, log_file: Path | 
         results.append(result)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "recipient": REPORT_RECIPIENT,
         "mode": "weekly-reconcile" if not expected_shas else "post-push",
         "max_auto_attempts": MAX_AUTO_ATTEMPTS,
         "sites": results,
@@ -501,7 +514,6 @@ def concise_email(report: dict[str, Any]) -> tuple[str, str]:
         ])
         if site.get("escalated"):
             lines.append(f"  recommended fix: {site['finding'].get('category', 'inspect deploy log')}")
-    lines.append(f"Recipient: {REPORT_RECIPIENT}")
     return subject, "\n".join(lines)
 
 
@@ -521,7 +533,13 @@ def main() -> int:
     if args.site != "all":
         report["sites"] = [site for site in report["sites"] if site["key"] == args.site]
     subject, body = concise_email(report)
-    report["email_draft"] = {"to": REPORT_RECIPIENT, "subject": subject, "body": body}
+    skip_reason = email_skip_reason()
+    if skip_reason:
+        print(skip_reason, file=sys.stderr)
+        report["email_draft"] = {"skipped": True, "reason": skip_reason}
+    else:
+        # The address itself is never written to the output; the sender resolves it from the environment.
+        report["email_draft"] = {"recipient_env": REPORT_RECIPIENT_ENV, "subject": subject, "body": body}
     print(json.dumps(report, indent=2))
     return 0
 
