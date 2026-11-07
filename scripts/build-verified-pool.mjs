@@ -82,9 +82,23 @@ function categoryFor(record) {
   return 'overlanding gear';
 }
 
+// A guide button label such as "Check Cooper STT Pro on Amazon ↗" is call-to-action text, not a
+// product name. Strip the leading verb and the trailing "on Amazon" (with its arrow) so the pool
+// keeps the product words the guide wrote. Nothing is invented: a label with neither wrapper is
+// returned unchanged, and a label that would become empty (or just a verb) is also returned unchanged.
+function cleanProductLabel(label) {
+  const raw = String(label || '').trim();
+  const cleaned = raw
+    .replace(/\s*[\u2197\u2192\u279C]\s*$/u, '')
+    .replace(/\s+on\s+Amazon\s*$/i, '')
+    .replace(/^(?:check|shop|view|see|buy)\s+/i, '')
+    .trim();
+  return !cleaned || /^(?:check|shop|view|see|buy)$/i.test(cleaned) ? raw : cleaned;
+}
+
 function chooseName(records) {
   return [...records]
-    .map(record => record.product.trim())
+    .map(record => cleanProductLabel(record.product))
     .sort((a, b) => b.length - a.length || a.localeCompare(b))[0];
 }
 
@@ -362,6 +376,8 @@ export {
   EVIDENCE_FIELDS,
   KNOWN_SOURCES,
   buildPersistedDocument,
+  chooseName,
+  cleanProductLabel,
   isCalendarDate,
   validEvidence,
   chooseGeneratedAt,
