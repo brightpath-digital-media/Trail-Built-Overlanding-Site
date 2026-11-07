@@ -4,14 +4,30 @@
 const toggle = document.querySelector('.menu-toggle');
 const nav = document.querySelector('header nav');
 if (toggle && nav) {
+  // Keep ARIA wiring present even on pages generated before the shared chrome
+  // normalizer (scripts/ensure_main_landmarks.py) has run.
+  if (!nav.id) nav.id = 'site-nav';
+  if (!toggle.hasAttribute('aria-controls')) toggle.setAttribute('aria-controls', nav.id);
+
+  const setMenuOpen = (open) => {
+    nav.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  setMenuOpen(nav.classList.contains('open'));
+
   toggle.addEventListener('click', () => {
-    const isOpen = nav.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', isOpen);
+    setMenuOpen(!nav.classList.contains('open'));
   });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('header')) {
-      nav.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
+      setMenuOpen(false);
+    }
+  });
+  // Escape closes an open menu and returns focus to the toggle button.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && nav.classList.contains('open')) {
+      setMenuOpen(false);
+      toggle.focus();
     }
   });
 }
