@@ -1,0 +1,24 @@
+{
+  "c018959bbae8d97a271053b5c104e94128eb134e": {
+    "run_id": "39321357200",
+    "conclusion": "success"
+  },
+  "179a32f3cc884863d437540efa938afe58d42a71": {
+    "run_id": "39083640258",
+    "conclusion": "success"
+  },
+  "f3983324e2267ac9a0aaac326cafb4abfd4990ec": {
+    "run_id": "36446263634",
+    "conclusion": "failure",
+    "issue": "open issue #21"
+  },
+  "792513ccbec0383dc5035a5098be62b46adf85e6": {
+    "run_id": "35623512965",
+    "conclusion": "failure",
+    "issue": "open issue #19"
+  },
+  "4e285ee73af6089fd3c6aea6856828b6a3045967": {
+    "run_id": "34873213048",
+    "conclusion": "success"
+  }
+}
