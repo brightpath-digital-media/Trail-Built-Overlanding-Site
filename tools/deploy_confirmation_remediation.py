@@ -31,7 +31,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HOME = Path("/home/ubuntu")
-REPORT_RECIPIENT = "kamilano1@gmail.com"
+REPORT_RECIPIENT = "hello@trailbuiltoverland.com"
 MAX_AUTO_ATTEMPTS = 2
 
 
