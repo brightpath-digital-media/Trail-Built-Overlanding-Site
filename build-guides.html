@@ -47,6 +47,7 @@
 <script src="https://analytics.ahrefs.com/analytics.js" data-key="j9FlobP0cqeKUsyYo3HRlw" async></script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <!-- ===== HEADER ===== -->
 <header>
@@ -56,7 +57,7 @@
       <input type="search" id="site-search" placeholder="Search gear, builds..." aria-label="Search site" autocomplete="off" />
       <div id="search-results" class="search-dropdown" aria-live="polite"></div>
     </div>
-    <nav>
+    <nav id="site-nav">
       <a href="index.html">Home</a>
       <a href="reviews.html">Reviews</a>
       <a href="build-guides.html" class="active">Build Guides</a>
@@ -64,10 +65,10 @@
       <a href="index.html#categories">Categories</a>
       <a href="categories/recovery-gear.html" class="header-cta btn">Best Picks</a>
     </nav>
-    <button class="menu-toggle" aria-label="Toggle menu"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <button class="menu-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="site-nav"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   </div>
 </header>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
 
 <!-- ===== PAGE HERO ===== -->
 <section class="page-hero">

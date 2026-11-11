@@ -49,6 +49,7 @@
 <script type="application/ld+json">{"@type":"Organization","name":"Trail Built Editorial","url":"https://trailbuiltoverland.com/about.html"}</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <!-- ===== HEADER ===== -->
 <header>
 <div class="container header-inner">
@@ -57,7 +58,7 @@
 <input aria-label="Search site" autocomplete="off" id="site-search" placeholder="Search gear, builds..." type="search"/>
 <div aria-live="polite" class="search-dropdown" id="search-results"></div>
 </div>
-<nav>
+<nav id="site-nav">
 <a class="active" href="index.html">Home</a>
 <a href="reviews.html">Reviews</a>
 <a href="build-guides.html">Build Guides</a>
@@ -66,10 +67,10 @@
 <a class="header-cta btn" href="categories/recovery-gear.html">Best Picks</a>
 <a class="btn" href="quiz.html" style="background:var(--accent);color:#fff;margin-left:4px;">Take the Quiz</a>
 </nav>
-<button aria-label="Toggle menu" class="menu-toggle"><svg aria-hidden="true" fill="none" height="22" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="22" xmlns="http://www.w3.org/2000/svg"><line x1="3" x2="21" y1="12" y2="12"></line><line x1="3" x2="21" y1="6" y2="6"></line><line x1="3" x2="21" y1="18" y2="18"></line></svg></button>
+<button aria-label="Toggle menu" class="menu-toggle" aria-expanded="false" aria-controls="site-nav"><svg aria-hidden="true" fill="none" height="22" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="22" xmlns="http://www.w3.org/2000/svg"><line x1="3" x2="21" y1="12" y2="12"></line><line x1="3" x2="21" y1="6" y2="6"></line><line x1="3" x2="21" y1="18" y2="18"></line></svg></button>
 </div>
 </header>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
 <!-- ===== HERO ===== -->
 <section class="hero">
 <div class="container">
