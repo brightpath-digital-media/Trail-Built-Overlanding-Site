@@ -20,12 +20,30 @@ def text(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value)).strip()
 
 
+# Words that cannot end a title. A hard cut that lands right after one of these leaves a
+# dangling fragment such as "Best Overlanding Air Compressors for | Trail Built Overland".
+DANGLING_WORDS = {
+    "&", "and", "or", "for", "vs", "vs.", "versus", "to", "in", "of", "with", "without",
+    "the", "a", "an", "on", "at", "by", "from", "your", "plus",
+}
+TRAILING_PUNCTUATION = " ,:;—–-"
+
+
+def trim_dangling(fragment: str) -> str:
+    """Drop trailing connector words/punctuation left behind by a hard truncation."""
+    words = fragment.rstrip(TRAILING_PUNCTUATION).split(" ")
+    while len(words) > 1 and words[-1].lower() in DANGLING_WORDS:
+        words.pop()
+        words[-1] = words[-1].rstrip(TRAILING_PUNCTUATION)
+    return " ".join(words).rstrip(TRAILING_PUNCTUATION)
+
+
 def branded_title(value: str) -> str:
     base = re.sub(r"\s*\|\s*Trail Built(?: Overland)?\s*$", "", html.unescape(value), flags=re.I).strip()
     limit = MAX_TITLE - len(SUFFIX)
     if len(base) > limit:
-        truncated = base[:limit].rsplit(" ", 1)[0].rstrip(" ,:;—–-")
-        base = truncated or base[:limit].rstrip(" ,:;—–-")
+        truncated = trim_dangling(base[:limit].rsplit(" ", 1)[0])
+        base = truncated or base[:limit].rstrip(TRAILING_PUNCTUATION)
     return f"{base}{SUFFIX}"[:MAX_TITLE].rstrip()
 
 
@@ -73,12 +91,17 @@ def process(path: Path) -> bool:
     return True
 
 
-pages = [ROOT / "index.html", ROOT / "reviews.html", ROOT / "build-guides.html", ROOT / "quiz.html", ROOT / "about.html"]
-pages.extend((ROOT / "articles").glob("*.html"))
-pages.extend((ROOT / "categories").glob("*.html"))
+def main() -> None:
+    pages = [ROOT / "index.html", ROOT / "reviews.html", ROOT / "build-guides.html", ROOT / "quiz.html", ROOT / "about.html"]
+    pages.extend((ROOT / "articles").glob("*.html"))
+    pages.extend((ROOT / "categories").glob("*.html"))
 
-changed = 0
-for page in pages:
-    changed += int(process(page))
+    changed = 0
+    for page in pages:
+        changed += int(process(page))
 
-print(f"Normalized titles and missing alt text on {changed} static pages.")
+    print(f"Normalized titles and missing alt text on {changed} static pages.")
+
+
+if __name__ == "__main__":
+    main()
