@@ -24,7 +24,7 @@ Usage:
   python3 tools/weekly_asin_healthcheck.py --dry-run
   python3 tools/weekly_asin_healthcheck.py --sync-price-images
 
-Report recipient: kamilano1@gmail.com
+Report recipient: hello@trailbuiltoverland.com
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from pathlib import Path
 from deploy_confirmation_remediation import SITES as DEPLOY_SITES, concise_email, reconcile_all, remediate_product_finding
 from urllib.parse import parse_qs, urlparse
 
-REPORT_RECIPIENT = "kamilano1@gmail.com"
+REPORT_RECIPIENT = "hello@trailbuiltoverland.com"
 REQUEST_DELAY_SECONDS = 1.25
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPORT_PATH = REPO_ROOT / "affiliate_healthcheck_report.json"

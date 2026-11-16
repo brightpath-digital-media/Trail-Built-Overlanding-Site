@@ -43,6 +43,22 @@ async function run() {
   const mod = await import('./build-verified-pool.mjs');
   const { mergeProducts, verifyProducts, buildPersistedDocument, persistWorkingFile, chooseGeneratedAt, persistedProducts } = mod;
 
+  // Guide call-to-action labels are not product names: the verb and the "on Amazon" arrow are
+  // stripped, nothing else is changed or invented.
+  const { chooseName, cleanProductLabel } = mod;
+  assert.strictEqual(cleanProductLabel('Check Cooper STT Pro on Amazon \u2197'), 'Cooper STT Pro');
+  assert.strictEqual(cleanProductLabel('Shop Kinetic Ropes on Amazon \u2197'), 'Kinetic Ropes');
+  assert.strictEqual(cleanProductLabel('Check Yankum Ropes on Amazon \u2197'), 'Yankum Ropes');
+  assert.strictEqual(cleanProductLabel('Check BFG KM3 37" Tires on Amazon \u2197'), 'BFG KM3 37" Tires');
+  assert.strictEqual(cleanProductLabel('Check 285/70R17 KO2 on Amazon'), '285/70R17 KO2');
+  assert.strictEqual(cleanProductLabel('WARN Epic 9-Ton Snatch Block'), 'WARN Epic 9-Ton Snatch Block', 'a real name is untouched');
+  assert.strictEqual(cleanProductLabel('Shop Vac Camp Cleaner'), 'Vac Camp Cleaner', 'only the wrapper verb is removed, documented limit');
+  assert.strictEqual(cleanProductLabel('Check on Amazon'), 'Check on Amazon', 'never returns an empty name');
+  assert.strictEqual(
+    chooseName([{ product: 'Check Yankum Ropes on Amazon \u2197' }, { product: 'Yankum Ropes' }]),
+    'Yankum Ropes',
+  );
+
   // Seed comes in unsorted on purpose.
   const seedProducts = [E, C, B, A].map(seed);
   const merged = mergeProducts({ seedProducts, priorProducts: prior, results, today: TODAY });

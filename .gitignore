@@ -13,3 +13,6 @@ scripts/extract_actual_products.py
 scripts/extract_products.py
 scripts/validate_researched_images.py
 .claude/settings.local.json
+
+__pycache__/
+*.pyc
