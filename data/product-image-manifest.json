@@ -553,6 +553,42 @@
       "product": "Leatherman Signal Multi-Tool",
       "asin": "B015OL55VS",
       "added": "2026-09-28 TB-WEEKLY-0928"
+    },
+    {
+      "path": "assets/product-images/best-overlanding-kinetic-ropes-and-snatch-straps-bubba-rope-30-foot-power-stretch-e9421054.jpg",
+      "source": "https://www.amazon.com/dp/B007HYR85W",
+      "license": "Amazon product-listing image; used under the Amazon Associates/Product Advertising image-display terms, subject to those terms.",
+      "source_type": "Amazon product listing",
+      "articles": [
+        "articles/best-overlanding-kinetic-ropes-and-snatch-straps.html"
+      ],
+      "product": "Bubba Rope 30-foot Power Stretch Recovery Rope",
+      "asin": "B007HYR85W",
+      "added": "2026-11-23 TB-WEEKLY-1123"
+    },
+    {
+      "path": "assets/product-images/best-overlanding-kinetic-ropes-and-snatch-straps-rhino-usa-kinetic-recovery-rope-1-inch-x-30-ft-25f30973.jpg",
+      "source": "https://www.amazon.com/dp/B08ZJWK7HT",
+      "license": "Amazon product-listing image; used under the Amazon Associates/Product Advertising image-display terms, subject to those terms.",
+      "source_type": "Amazon product listing",
+      "articles": [
+        "articles/best-overlanding-kinetic-ropes-and-snatch-straps.html"
+      ],
+      "product": "Rhino USA Kinetic Recovery Rope 1in x 30ft",
+      "asin": "B08ZJWK7HT",
+      "added": "2026-11-23 TB-WEEKLY-1123"
+    },
+    {
+      "path": "assets/product-images/best-overlanding-kinetic-ropes-and-snatch-straps-yankum-kinetic-recovery-rope-7-8-inch-x-30-ft-55232d59.jpg",
+      "source": "https://www.amazon.com/dp/B0C6WMYFS2",
+      "license": "Amazon product-listing image; used under the Amazon Associates/Product Advertising image-display terms, subject to those terms.",
+      "source_type": "Amazon product listing",
+      "articles": [
+        "articles/best-overlanding-kinetic-ropes-and-snatch-straps.html"
+      ],
+      "product": "Yankum Kinetic Recovery Rope 7/8\" x 30'",
+      "asin": "B0C6WMYFS2",
+      "added": "2026-11-23 TB-WEEKLY-1123"
     }
   ]
 }
